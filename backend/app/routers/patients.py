@@ -24,16 +24,13 @@ async def add_patient(
     session: AsyncSession = Depends(get_session)
 ) -> Patient:
     """Create a new patient."""
-    now = datetime.now()
     db_patient = PatientModel(
         medical_identifier=patient.medical_identifier,
         first_name=patient.first_name,
         last_name=patient.last_name,
         rut=patient.rut,
         birth_date=patient.birth_date,
-        gender=patient.gender,
-        created_at=now,
-        updated_at=now
+        gender=patient.gender
     )
     session.add(db_patient)
     await session.flush()
