@@ -433,11 +433,13 @@ export default function Pacientes () {
 
         <div className="absolute top-20 left-px w-[67px] h-[67px] bg-[#307bec] rounded-[33.43px]" />
 
+        <a href='/'>
         <img
           className="absolute w-[35.78%] h-[8.21%] top-[7.32%] left-[32.39%]"
           alt="Group"
           src="https://c.animaapp.com/tu8bxkD3/img/group-2@2x.png"
         />
+        </a>
 
         <img
           className="absolute w-[29.85%] h-[9.78%] top-[58.56%] left-[35.82%]"
