@@ -20,3 +20,10 @@ from .clinical_episode import (
     ClinicalEpisodeUpdate,
     ClinicalEpisode,
 )
+from .episode_document import (
+    EpisodeDocumentType,
+    EpisodeDocumentBase,
+    EpisodeDocumentCreate,
+    EpisodeDocumentUpdate,
+    EpisodeDocument,
+)
