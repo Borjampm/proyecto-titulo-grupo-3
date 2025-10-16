@@ -1,0 +1,10 @@
+# Use the official PostgreSQL 14 image
+FROM postgres:14
+
+# Optional: set environment variables (default credentials)
+ENV POSTGRES_USER=admin
+ENV POSTGRES_PASSWORD=admin
+ENV POSTGRES_DB=mydatabase
+
+# Expose the PostgreSQL port
+EXPOSE 5432

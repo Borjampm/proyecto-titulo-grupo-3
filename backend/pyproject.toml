@@ -5,8 +5,13 @@ description = "FastAPI hello world service"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "fastapi",
-    "uvicorn[standard]"
+    "alembic>=1.17.0",
+    "asyncpg>=0.30.0",
+    "fastapi[standard]",
+    "pydantic-settings>=2.11.0",
+    "python-dotenv>=1.1.1",
+    "sqlalchemy[asyncio]>=2.0.44",
+    "uvicorn[standard]",
 ]
 
 [build-system]
@@ -21,3 +26,4 @@ packages = ["app"]
 
 [tool.hatch.build.targets.sdist]
 include = ["app", "README.md", "pyproject.toml"]
+
