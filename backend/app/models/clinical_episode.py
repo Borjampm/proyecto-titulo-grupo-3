@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.models.patient import Patient
     from app.models.bed import Bed
     from app.models.episode_document import EpisodeDocument
+    from app.models.clinical_episode_information import ClinicalEpisodeInformation
 
 
 class EpisodeStatus(enum.Enum):
@@ -79,6 +80,11 @@ class ClinicalEpisode(Base):
     )
     documents: Mapped[list["EpisodeDocument"]] = relationship(
         "EpisodeDocument",
+        back_populates="clinical_episode",
+        cascade="all, delete-orphan"
+    )
+    information_records: Mapped[list["ClinicalEpisodeInformation"]] = relationship(
+        "ClinicalEpisodeInformation",
         back_populates="clinical_episode",
         cascade="all, delete-orphan"
     )

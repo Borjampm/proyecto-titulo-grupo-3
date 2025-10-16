@@ -27,3 +27,10 @@ from .episode_document import (
     EpisodeDocumentUpdate,
     EpisodeDocument,
 )
+from .clinical_episode_information import (
+    EpisodeInfoType,
+    ClinicalEpisodeInformationBase,
+    ClinicalEpisodeInformationCreate,
+    ClinicalEpisodeInformationUpdate,
+    ClinicalEpisodeInformation,
+)
