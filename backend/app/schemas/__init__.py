@@ -6,4 +6,10 @@ from .patient_document import (
     PatientDocumentUpdate,
     PatientDocument,
 )
+from .patient_information import (
+    PatientInformationBase,
+    PatientInformationCreate,
+    PatientInformationUpdate,
+    PatientInformation,
+)
 

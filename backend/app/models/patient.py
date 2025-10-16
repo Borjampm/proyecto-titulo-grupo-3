@@ -7,6 +7,7 @@ from app.db import Base
 
 if TYPE_CHECKING:
     from app.models.patient_document import PatientDocument
+    from app.models.patient_information import PatientInformation
 
 
 class Patient(Base):
@@ -37,9 +38,15 @@ class Patient(Base):
         onupdate=func.now()
     )
 
-    # Relationship
+    # Relationships
     documents: Mapped[list["PatientDocument"]] = relationship(
         "PatientDocument",
         back_populates="patient",
+        cascade="all, delete-orphan"
+    )
+    information: Mapped["PatientInformation"] = relationship(
+        "PatientInformation",
+        back_populates="patient",
+        uselist=False,
         cascade="all, delete-orphan"
     )
