@@ -12,4 +12,4 @@ from .patient_information import (
     PatientInformationUpdate,
     PatientInformation,
 )
-
+from .bed import BedBase, BedCreate, BedUpdate, Bed
