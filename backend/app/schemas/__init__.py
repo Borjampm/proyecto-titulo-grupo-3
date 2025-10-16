@@ -13,3 +13,10 @@ from .patient_information import (
     PatientInformation,
 )
 from .bed import BedBase, BedCreate, BedUpdate, Bed
+from .clinical_episode import (
+    EpisodeStatus,
+    ClinicalEpisodeBase,
+    ClinicalEpisodeCreate,
+    ClinicalEpisodeUpdate,
+    ClinicalEpisode,
+)
