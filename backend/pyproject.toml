@@ -3,7 +3,7 @@ name = "backend"
 version = "0.1.0"
 description = "FastAPI hello world service"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.17.0",
     "asyncpg>=0.30.0",

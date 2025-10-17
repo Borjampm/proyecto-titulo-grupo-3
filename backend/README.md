@@ -17,7 +17,7 @@ A modern, async FastAPI application for patient management with PostgreSQL datab
 
 ## Prerequisites
 
-- **Python 3.10 or newer**
+- **Python 3.12 or newer**
 - **[uv](https://github.com/astral-sh/uv)** - Modern Python package manager
   ```bash
   # Install uv (choose one method)
@@ -99,11 +99,6 @@ cp .env.test_template .env
 ```env
 # ⚠️ Note the +asyncpg in the URL - required for async operations
 DATABASE_URL=postgresql+asyncpg://admin:admin@localhost:5432/mydatabase
-
-# Optional: Add these for future enhancements
-DEBUG=True
-API_V1_PREFIX=/api/v1
-ALLOWED_ORIGINS=["http://localhost:3000"]
 ```
 
 ### Environment Variables Reference
@@ -111,9 +106,6 @@ ALLOWED_ORIGINS=["http://localhost:3000"]
 | Variable | Description | Default | Required |
 |----------|-------------|---------|----------|
 | `DATABASE_URL` | PostgreSQL connection string with `+asyncpg` driver | - | ✅ Yes |
-| `DEBUG` | Enable debug mode | `False` | ❌ No |
-| `API_V1_PREFIX` | API version prefix | `/api/v1` | ❌ No |
-| `ALLOWED_ORIGINS` | CORS allowed origins (JSON array) | `[]` | ❌ No |
 
 ## 🗄️ Database Setup
 
@@ -176,6 +168,14 @@ uv run alembic upgrade head
 uv run alembic current
 ```
 
+### Useful Database Commands
+
+```bash
+uv run db-seed # Seed the database with sample data
+uv run db-reset # Reset the database and seed with sample data
+uv run db-clear # Clear the database and recreate it empty
+```
+
 ## 🏃 Running the Application
 
 ### Development Server
@@ -203,54 +203,6 @@ curl http://localhost:8000/
 ```
 
 ## 📚 API Documentation
-
-### Endpoints
-
-#### Root
-- **GET /** - Health check / Hello world
-  - Response: `{"message": "Hello, world!"}`
-
-#### Patients
-
-- **GET /patients/** - List all patients
-  - Response: `Array<Patient>`
-  - Example:
-    ```bash
-    curl http://localhost:8000/patients/
-    ```
-
-- **POST /patients/** - Create a new patient
-  - Request Body: `PatientCreate`
-  - Response: `Patient`
-  - Example:
-    ```bash
-    curl -X POST http://localhost:8000/patients/ \
-      -H "Content-Type: application/json" \
-      -d '{
-        "medical_identifier": "P001",
-        "first_name": "Juan",
-        "last_name": "Pérez",
-        "rut": "12345678-9",
-        "birth_date": "1990-01-15",
-        "gender": "male"
-      }'
-    ```
-
-### Data Models
-
-#### Patient Schema
-
-```python
-{
-  "id": 1,
-  "medical_identifier": "P001",
-  "first_name": "Juan",
-  "last_name": "Pérez",
-  "rut": "12345678-9",
-  "birth_date": "1990-01-15",
-  "gender": "male"
-}
-```
 
 ### Interactive API Documentation
 
@@ -321,164 +273,6 @@ uv add --dev pytest pytest-asyncio httpx
 
 After adding dependencies, both `pyproject.toml` and `uv.lock` will be updated. Commit both files.
 
-### Code Style
-
-```bash
-# Format code (if ruff is installed)
-uv run ruff format .
-
-# Lint code
-uv run ruff check .
-
-# Type checking (if mypy is installed)
-uv run mypy app/
-```
-
-### Recommended Development Tools
-
-```bash
-uv add --dev ruff mypy pytest pytest-asyncio httpx pytest-cov
-```
-
-## 🧪 Testing
-
-### Setup Tests (Future)
-
-```bash
-# Install test dependencies
-uv add --dev pytest pytest-asyncio httpx pytest-cov
-
-# Run tests
-uv run pytest
-
-# Run with coverage
-uv run pytest --cov=app --cov-report=html
-
-# Run specific test file
-uv run pytest tests/test_patients.py -v
-```
-
-### Test Database
-
-For testing, consider using a separate test database:
-
-```env
-# .env.test
-DATABASE_URL=postgresql+asyncpg://admin:admin@localhost:5432/mydatabase_test
-```
-
-## 🔧 Troubleshooting
-
-### Database Connection Issues
-
-**Error:** `asyncpg.exceptions.InvalidPasswordError` or connection refused
-
-**Solutions:**
-1. Verify database is running:
-   ```bash
-   docker ps | grep test-database
-   ```
-2. Check DATABASE_URL in `.env` uses `postgresql+asyncpg://`
-3. Verify credentials match Docker environment variables
-4. Test direct connection:
-   ```bash
-   docker exec -it test-database psql -U admin -d mydatabase
-   ```
-
-### Migration Issues
-
-**Error:** `Target database is not up to date`
-
-**Solution:**
-```bash
-# Check current version
-uv run alembic current
-
-# Check history
-uv run alembic history
-
-# Upgrade to latest
-uv run alembic upgrade head
-```
-
-**Error:** `Can't locate revision identified by 'xxxx'`
-
-**Solution:** The migration history is out of sync. You may need to:
-```bash
-# Stamp the database with current version
-uv run alembic stamp head
-```
-
-### Import Errors
-
-**Error:** `ModuleNotFoundError: No module named 'app'`
-
-**Solutions:**
-1. Ensure you're in the backend directory
-2. Activate the virtual environment
-3. Run commands with `uv run` prefix
-
-### Port Already in Use
-
-**Error:** `Address already in use`
-
-**Solution:**
-```bash
-# Find process using port 8000
-lsof -i :8000
-
-# Kill the process
-kill -9 <PID>
-
-# Or use a different port
-uv run uvicorn app.main:app --port 8001
-```
-
-## 🐳 Docker Commands Reference
-
-### Database Container Management
-
-```bash
-# Start existing container
-docker start test-database
-
-# Stop container
-docker stop test-database
-
-# Remove container
-docker rm test-database
-
-# Remove container and volume (⚠️ deletes all data)
-docker rm test-database
-docker volume rm pgdata
-
-# View logs
-docker logs test-database -f
-
-# Access PostgreSQL CLI
-docker exec -it test-database psql -U admin -d mydatabase
-```
-
-## 📦 Updating Dependencies
-
-```bash
-# Update all dependencies to latest compatible versions
-uv sync --upgrade
-
-# Update a specific package
-uv add package-name@latest
-
-# Lock dependencies without updating
-uv lock
-```
-
-## 🤝 Contributing
-
-1. Create a feature branch
-2. Make your changes
-3. Run tests and linters
-4. Update documentation
-5. Submit a pull request
 
 ## 📝 Additional Resources
 
