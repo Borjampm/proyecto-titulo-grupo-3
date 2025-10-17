@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import Boolean, DateTime, func
+from sqlalchemy import Boolean, DateTime, func, String
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 from typing import TYPE_CHECKING
@@ -16,6 +16,10 @@ class Bed(Base):
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4
+    )
+    room: Mapped[str] = mapped_column(
+        String(320),
+        nullable=False
     )
     active: Mapped[bool] = mapped_column(
         Boolean,

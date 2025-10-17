@@ -14,6 +14,15 @@ dependencies = [
     "uvicorn[standard]",
 ]
 
+[project.scripts]
+# api
+dev = "scripts.dev:main"
+# database
+db-seed = "scripts.database_functions:seed"
+db-reset = "scripts.database_functions:reset"
+db-clear = "scripts.database_functions:clear"
+
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
