@@ -40,3 +40,10 @@ from .task_definition import (
     TaskDefinitionUpdate,
     TaskDefinition,
 )
+from .task_instance import (
+    TaskStatus,
+    TaskInstanceBase,
+    TaskInstanceCreate,
+    TaskInstanceUpdate,
+    TaskInstance,
+)
