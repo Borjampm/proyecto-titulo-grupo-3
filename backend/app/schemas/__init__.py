@@ -34,3 +34,16 @@ from .clinical_episode_information import (
     ClinicalEpisodeInformationUpdate,
     ClinicalEpisodeInformation,
 )
+from .task_definition import (
+    TaskDefinitionBase,
+    TaskDefinitionCreate,
+    TaskDefinitionUpdate,
+    TaskDefinition,
+)
+from .task_instance import (
+    TaskStatus,
+    TaskInstanceBase,
+    TaskInstanceCreate,
+    TaskInstanceUpdate,
+    TaskInstance,
+)

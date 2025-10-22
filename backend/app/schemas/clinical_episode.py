@@ -45,3 +45,15 @@ class ClinicalEpisode(ClinicalEpisodeBase):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+ # In schemas/clinical_episode.py
+from app.schemas.patient import Patient  # Import the Patient schema
+
+class ClinicalEpisodeWithPatient(ClinicalEpisodeBase):
+    id: UUID
+    patient_id: UUID
+    patient: Optional[Patient] = None  # Add this to include the full patient data
+    created_at: datetime
+    updated_at: datetime
+    
+    model_config = ConfigDict(from_attributes=True)

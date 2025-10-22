@@ -1,32 +1,42 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import Boolean, DateTime, func, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import String, Integer, DateTime, Boolean, func
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 import uuid
 from typing import TYPE_CHECKING
 from app.db import Base
 
 if TYPE_CHECKING:
-    from app.models.clinical_episode import ClinicalEpisode
+    from app.models.task_instance import TaskInstance
 
 
-class Bed(Base):
-    __tablename__ = "beds"
+class TaskDefinition(Base):
+    __tablename__ = "task_definitions"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
         default=uuid.uuid4
     )
-    room: Mapped[str] = mapped_column(
-        String(320),
+    title: Mapped[str] = mapped_column(
+        String(500),
         nullable=False
     )
-    active: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=True
+    description: Mapped[str] = mapped_column(
+        String(2000)
     )
-    available: Mapped[bool] = mapped_column(
+    estimate_duration: Mapped[int] = mapped_column(
+        Integer
+    )
+    default_priority: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1
+    )
+    metadata_json: Mapped[dict] = mapped_column(
+        JSONB,
+        nullable=True
+    )
+    active: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=True
@@ -39,10 +49,4 @@ class Bed(Base):
         DateTime(timezone=True),
         server_default=func.now(),
         onupdate=func.now()
-    )
-
-    # Relationship
-    clinical_episodes: Mapped[list["ClinicalEpisode"]] = relationship(
-        "ClinicalEpisode",
-        back_populates="bed"
     )
