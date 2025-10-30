@@ -82,3 +82,14 @@ class EpisodeHistory(BaseModel):
     """Schema for episode history response"""
     episode_id: UUID
     events: list[HistoryEvent]
+
+
+class PaginatedClinicalEpisodes(BaseModel):
+    """Schema for paginated clinical episodes response"""
+    data: list[ClinicalEpisode | ClinicalEpisodeWithPatient]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+    
+    model_config = ConfigDict(from_attributes=True)
