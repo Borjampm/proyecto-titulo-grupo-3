@@ -13,6 +13,7 @@ The `seed.py` script populates the database with sample data for development and
 - Creates clinical episodes with proper relationships to patients and beds
 - Creates patient and episode documents
 - Creates clinical episode information records (diagnosis, medications, vital signs, etc.)
+- Creates tasks with realistic status progressions and complete audit history
 
 ### Usage
 
@@ -50,6 +51,31 @@ Each patient includes:
 - Proper bed assignments
 - Episode documents and information records
 
+#### Tasks with Status History (10 administrative tasks for main episode)
+1. **Contact Family Member** - Full progression: Pending → In Progress → Completed
+2. **Verify Insurance Coverage** - Full progression: Pending → In Progress → Completed
+3. **Obtain Consent Form** - Full progression: Pending → In Progress → Completed
+4. **Social Work Evaluation** - Full progression: Pending → In Progress → Completed
+5. **Verify Outstanding Payments** - Currently in progress: Pending → In Progress
+6. **Room Assignment Confirmation** - Still pending
+7. **Request Medical Records Transfer** - Cancelled (patient brought records)
+8. **Schedule Post-Discharge Follow-up** - Currently in progress
+9. **Complete Admission Paperwork** - Full progression: Pending → In Progress → Completed
+10. **Dietary Restrictions Update** - Full progression: Pending → In Progress → Completed
+
+All tasks are administrative/procedural (not medical) such as:
+- Family communication
+- Insurance and billing verification
+- Document signing and consent forms
+- Social services coordination
+- Administrative paperwork
+
+Each task includes:
+- Complete status change history with timestamps
+- Who made each change (changed_by)
+- Notes explaining the change
+- Realistic time progression (minutes to hours between status changes)
+
 #### Documents and Information
 - Patient documents (medical reports, lab results, imaging, prescriptions)
 - Episode documents (admission reports, treatment plans, nursing notes)
@@ -65,6 +91,8 @@ The script creates data for all models:
 - `ClinicalEpisode` - Patient hospital stays
 - `EpisodeDocument` - Documents for specific episodes
 - `ClinicalEpisodeInformation` - Episode-specific information records
+- `TaskInstance` - Tasks assigned to episodes
+- `TaskStatusHistory` - Complete audit trail of all task status changes
 
 ### Notes
 

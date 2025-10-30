@@ -40,6 +40,8 @@ from app.models.bed import Bed
 from app.models.clinical_episode import ClinicalEpisode, EpisodeStatus
 from app.models.episode_document import EpisodeDocument, EpisodeDocumentType
 from app.models.clinical_episode_information import ClinicalEpisodeInformation, EpisodeInfoType
+from app.models.task_instance import TaskInstance, TaskStatus
+from app.models.task_status_history import TaskStatusHistory
 
 
 # Sample data
@@ -193,6 +195,104 @@ SAMPLE_EPISODE_INFO = [
     }
 ]
 
+SAMPLE_TASKS = [
+    {
+        "title": "Contact Family Member",
+        "description": "Call emergency contact to inform about patient admission and current status",
+        "priority": 5,
+        "status_progression": [
+            (TaskStatus.PENDING, 0, None, "Task created"),
+            (TaskStatus.IN_PROGRESS, 30, "Admin Staff", "Attempting to reach family member"),
+            (TaskStatus.COMPLETED, 45, "Admin Staff", "Successfully contacted family, they will visit tomorrow")
+        ]
+    },
+    {
+        "title": "Verify Insurance Coverage",
+        "description": "Check patient's insurance coverage and confirm hospitalization authorization",
+        "priority": 4,
+        "status_progression": [
+            (TaskStatus.PENDING, 0, None, "Task created"),
+            (TaskStatus.IN_PROGRESS, 60, "Insurance Coordinator", "Contacting insurance provider"),
+            (TaskStatus.COMPLETED, 180, "Insurance Coordinator", "Coverage verified, all procedures authorized")
+        ]
+    },
+    {
+        "title": "Obtain Consent Form - Procedure Authorization",
+        "description": "Have patient sign informed consent form for scheduled procedures",
+        "priority": 5,
+        "status_progression": [
+            (TaskStatus.PENDING, 0, None, "Task created"),
+            (TaskStatus.IN_PROGRESS, 120, "Nurse Coordinator", "Explaining procedures to patient"),
+            (TaskStatus.COMPLETED, 135, "Nurse Coordinator", "Form signed and filed in patient record")
+        ]
+    },
+    {
+        "title": "Social Work Evaluation",
+        "description": "Complete social work assessment to determine post-discharge needs and support",
+        "priority": 3,
+        "status_progression": [
+            (TaskStatus.PENDING, 0, None, "Task created"),
+            (TaskStatus.IN_PROGRESS, 240, "Social Worker", "Interview with patient in progress"),
+            (TaskStatus.COMPLETED, 300, "Social Worker", "Assessment complete, report filed")
+        ]
+    },
+    {
+        "title": "Verify Outstanding Payments",
+        "description": "Review patient account and confirm any pending payments from previous visits",
+        "priority": 2,
+        "status_progression": [
+            (TaskStatus.PENDING, 0, None, "Task created"),
+            (TaskStatus.IN_PROGRESS, 90, "Billing Department", "Reviewing payment history")
+        ]
+    },
+    {
+        "title": "Room Assignment Confirmation",
+        "description": "Confirm room assignment and notify housekeeping for preparation",
+        "priority": 4,
+        "status_progression": [
+            (TaskStatus.PENDING, 0, None, "Task created")
+        ]
+    },
+    {
+        "title": "Request Medical Records Transfer",
+        "description": "Request medical records from patient's primary care physician",
+        "priority": 3,
+        "status_progression": [
+            (TaskStatus.PENDING, 0, None, "Task created"),
+            (TaskStatus.CANCELLED, 60, "Records Dept", "Patient brought complete medical history with them")
+        ]
+    },
+    {
+        "title": "Schedule Post-Discharge Follow-up",
+        "description": "Coordinate follow-up appointment with specialist after discharge",
+        "priority": 2,
+        "status_progression": [
+            (TaskStatus.PENDING, 0, None, "Task created"),
+            (TaskStatus.IN_PROGRESS, 200, "Scheduling Coordinator", "Checking specialist availability")
+        ]
+    },
+    {
+        "title": "Complete Admission Paperwork",
+        "description": "Finalize all required admission forms and documentation",
+        "priority": 5,
+        "status_progression": [
+            (TaskStatus.PENDING, 0, None, "Task created"),
+            (TaskStatus.IN_PROGRESS, 15, "Admissions Office", "Processing admission forms"),
+            (TaskStatus.COMPLETED, 40, "Admissions Office", "All paperwork completed and filed")
+        ]
+    },
+    {
+        "title": "Dietary Restrictions Update",
+        "description": "Update patient dietary requirements in hospital meal system",
+        "priority": 3,
+        "status_progression": [
+            (TaskStatus.PENDING, 0, None, "Task created"),
+            (TaskStatus.IN_PROGRESS, 50, "Nutrition Services", "Entering dietary preferences"),
+            (TaskStatus.COMPLETED, 55, "Nutrition Services", "Dietary profile updated in system")
+        ]
+    }
+]
+
 
 async def create_tables(engine):
     """Create all tables in the database."""
@@ -335,6 +435,103 @@ async def seed_clinical_episodes(session: AsyncSession, patients: List[Patient],
     return episodes
 
 
+async def seed_tasks(session: AsyncSession, episodes: List[ClinicalEpisode]) -> List[TaskInstance]:
+    """Create sample tasks with status history for clinical episodes."""
+    tasks = []
+    
+    # Create tasks for active episodes only
+    active_episodes = [ep for ep in episodes if ep.status == EpisodeStatus.ACTIVE]
+    
+    if not active_episodes:
+        print("No active episodes found, skipping task creation")
+        return tasks
+    
+    # Pick the first active episode for comprehensive task demonstration
+    demo_episode = active_episodes[0]
+    
+    print(f"\nCreating tasks for episode {demo_episode.id}...")
+    
+    for task_data in SAMPLE_TASKS:
+        # Calculate due date (1-7 days from episode admission)
+        due_date = (demo_episode.admission_at + timedelta(days=random.randint(1, 7))).date()
+        
+        # Get the status progression
+        status_progression = task_data["status_progression"]
+        
+        # The final status is the last one in the progression
+        final_status = status_progression[-1][0]
+        
+        # Create the task instance
+        task = TaskInstance(
+            episode_id=demo_episode.id,
+            title=task_data["title"],
+            description=task_data["description"],
+            due_date=due_date,
+            priority=task_data["priority"],
+            status=final_status
+        )
+        
+        session.add(task)
+        await session.flush()  # Get the task ID
+        
+        # Create status history for each transition
+        for idx, (status, minutes_offset, changed_by, notes) in enumerate(status_progression):
+            # Calculate when this status change occurred
+            changed_at = demo_episode.admission_at + timedelta(minutes=minutes_offset)
+            
+            # Determine old_status (None for the first status, previous status for subsequent ones)
+            old_status = None if idx == 0 else status_progression[idx - 1][0]
+            
+            status_history = TaskStatusHistory(
+                task_id=task.id,
+                old_status=old_status,
+                new_status=status,
+                changed_at=changed_at,
+                changed_by=changed_by,
+                notes=notes
+            )
+            
+            session.add(status_history)
+        
+        tasks.append(task)
+        print(f"  - Created task: '{task_data['title']}' with {len(status_progression)} status changes")
+    
+    # Add a few random tasks to other active episodes
+    for episode in active_episodes[1:3]:  # Add to 2 more episodes if they exist
+        num_tasks = random.randint(2, 4)
+        for task_data in random.sample(SAMPLE_TASKS, min(num_tasks, len(SAMPLE_TASKS))):
+            due_date = (episode.admission_at + timedelta(days=random.randint(1, 7))).date()
+            
+            # Random status for these tasks
+            random_status = random.choice([TaskStatus.PENDING, TaskStatus.IN_PROGRESS, TaskStatus.COMPLETED])
+            
+            task = TaskInstance(
+                episode_id=episode.id,
+                title=task_data["title"],
+                description=task_data["description"],
+                due_date=due_date,
+                priority=task_data["priority"],
+                status=random_status
+            )
+            
+            session.add(task)
+            await session.flush()
+            
+            # Create initial status history
+            status_history = TaskStatusHistory(
+                task_id=task.id,
+                old_status=None,
+                new_status=random_status,
+                changed_at=episode.admission_at + timedelta(minutes=random.randint(10, 120)),
+                notes="Task created"
+            )
+            session.add(status_history)
+            tasks.append(task)
+    
+    await session.commit()
+    return tasks
+
+
 async def main(reset: bool = False):
     """Main seeding function."""
     # Create engine
@@ -363,10 +560,14 @@ async def main(reset: bool = False):
             # Seed clinical episodes (references patients and beds)
             episodes = await seed_clinical_episodes(session, patients, beds)
 
+            # Seed tasks with status history
+            tasks = await seed_tasks(session, episodes)
+
             print(f"\nSeeding complete!")
             print(f"Created {len(patients)} patients")
             print(f"Created {len(beds)} beds")
             print(f"Created {len(episodes)} clinical episodes")
+            print(f"Created {len(tasks)} tasks with status history")
 
     except Exception as e:
         print(f"Error during seeding: {e}")

@@ -46,7 +46,7 @@ class ClinicalEpisode(ClinicalEpisodeBase):
 
     model_config = ConfigDict(from_attributes=True)
 
- # In schemas/clinical_episode.py
+# In schemas/clinical_episode.py
 from app.schemas.patient import Patient  # Import the Patient schema
 
 class ClinicalEpisodeWithPatient(ClinicalEpisodeBase):
@@ -57,3 +57,28 @@ class ClinicalEpisodeWithPatient(ClinicalEpisodeBase):
     updated_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
+
+
+# Schema classes for episode history endpoint
+class HistoryEventType(str, Enum):
+    """Enum for history event types"""
+    PATIENT_ADMISSION = "patient_admission"
+    DOCUMENT_UPLOADED = "document_uploaded"
+    TASK_CREATED = "task_created"
+    TASK_UPDATED = "task_updated"
+
+
+class HistoryEvent(BaseModel):
+    """Schema for a single history event"""
+    event_type: HistoryEventType
+    event_date: datetime
+    description: str
+    metadata: dict = Field(default_factory=dict)
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class EpisodeHistory(BaseModel):
+    """Schema for episode history response"""
+    episode_id: UUID
+    events: list[HistoryEvent]
