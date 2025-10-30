@@ -19,6 +19,9 @@ from .clinical_episode import (
     ClinicalEpisodeCreate,
     ClinicalEpisodeUpdate,
     ClinicalEpisode,
+    HistoryEventType,
+    HistoryEvent,
+    EpisodeHistory,
 )
 from .episode_document import (
     EpisodeDocumentType,
@@ -46,4 +49,9 @@ from .task_instance import (
     TaskInstanceCreate,
     TaskInstanceUpdate,
     TaskInstance,
+)
+from .task_status_history import (
+    TaskStatusHistoryBase,
+    TaskStatusHistoryCreate,
+    TaskStatusHistory,
 )

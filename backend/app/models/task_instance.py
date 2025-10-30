@@ -9,6 +9,7 @@ from app.db import Base
 if TYPE_CHECKING:
     from app.models.clinical_episode import ClinicalEpisode
     from app.models.task_definition import TaskDefinition
+    from app.models.task_status_history import TaskStatusHistory
 
 
 class TaskStatus(enum.Enum):
@@ -73,4 +74,10 @@ class TaskInstance(Base):
     clinical_episode: Mapped["ClinicalEpisode"] = relationship(
         "ClinicalEpisode",
         back_populates="task_instances"
+    )
+    status_history: Mapped[list["TaskStatusHistory"]] = relationship(
+        "TaskStatusHistory",
+        back_populates="task_instance",
+        cascade="all, delete-orphan",
+        order_by="TaskStatusHistory.changed_at"
     )
