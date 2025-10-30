@@ -142,6 +142,18 @@ async def list_clinical_episodes(
         if search_filter is not None:
             query = query.where(search_filter)
     
+    # Get total count before adding ORDER BY (ordering doesn't affect count)
+    # Use distinct to avoid duplicate counts from joins
+    count_query = select(func.count(func.distinct(ClinicalEpisodeModel.id)))
+    count_query = count_query.select_from(ClinicalEpisodeModel)
+    count_query = count_query.join(Patient)
+    count_query = count_query.join(Bed, isouter=True)
+    if search:
+        search_filter = build_search_filter(search)
+        if search_filter is not None:
+            count_query = count_query.where(search_filter)
+    total = await session.scalar(count_query) or 0
+    
     # Add relevance sorting
     if search and search.strip():
         search_term = search.strip()
@@ -163,12 +175,6 @@ async def list_clinical_episodes(
     else:
         # Default sort when no search: most recent first
         query = query.order_by(ClinicalEpisodeModel.admission_at.desc())
-    
-    # Get total count before pagination
-    count_query = select(func.count()).select_from(
-        query.distinct().subquery()
-    )
-    total = await session.scalar(count_query) or 0
     
     # Apply pagination
     offset = (page - 1) * page_size
