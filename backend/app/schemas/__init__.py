@@ -19,9 +19,11 @@ from .clinical_episode import (
     ClinicalEpisodeCreate,
     ClinicalEpisodeUpdate,
     ClinicalEpisode,
+    ClinicalEpisodeWithPatient,
     HistoryEventType,
     HistoryEvent,
     EpisodeHistory,
+    PaginatedClinicalEpisodes,
 )
 from .episode_document import (
     EpisodeDocumentType,

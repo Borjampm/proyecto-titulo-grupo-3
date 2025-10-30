@@ -1,0 +1,4 @@
+---
+alwaysApply: true
+---
+Do not create markdown files to explain the behaviour of the code every time you create a new functionality.

@@ -44,8 +44,9 @@ from app.models.task_instance import TaskInstance, TaskStatus
 from app.models.task_status_history import TaskStatusHistory
 
 
-# Sample data
+# Sample data - Enhanced for comprehensive search testing
 SAMPLE_PATIENTS = [
+    # Test Case 1: Simple single-word names
     {
         "medical_identifier": "P001",
         "first_name": "María",
@@ -63,6 +64,7 @@ SAMPLE_PATIENTS = [
             "medical_history": "Hypertension, Diabetes Type 2"
         }
     },
+    # Test Case 2: Another simple name (for testing duplicate first names)
     {
         "medical_identifier": "P002",
         "first_name": "Carlos",
@@ -80,6 +82,7 @@ SAMPLE_PATIENTS = [
             "medical_history": "Previous myocardial infarction, Hyperlipidemia"
         }
     },
+    # Test Case 3: Common first name for multiple matches
     {
         "medical_identifier": "P003",
         "first_name": "Ana",
@@ -97,13 +100,14 @@ SAMPLE_PATIENTS = [
             "medical_history": "Asthma, Migraine"
         }
     },
+    # Test Case 4: Multi-word first name
     {
         "medical_identifier": "P004",
-        "first_name": "Diego",
-        "last_name": "Martínez",
+        "first_name": "Maria Jose",
+        "last_name": "García",
         "rut": "14.567.890-1",
         "birth_date": date(1965, 1, 30),
-        "gender": "M",
+        "gender": "F",
         "information": {
             "address": "Los Conquistadores 101, Las Condes",
             "phone": "+56 9 4567 8901",
@@ -111,20 +115,250 @@ SAMPLE_PATIENTS = [
             "insurance": "Isapre Cruz Blanca",
             "blood_type": "AB+",
             "allergies": ["Latex"],
-            "medical_history": "COPD, Osteoarthritis"
+            "medical_history": "Pregnancy complications"
+        }
+    },
+    # Test Case 5: Multi-word last name
+    {
+        "medical_identifier": "P005",
+        "first_name": "Pedro",
+        "last_name": "García López",
+        "rut": "15.678.901-2",
+        "birth_date": date(1988, 5, 20),
+        "gender": "M",
+        "information": {
+            "address": "Av. Apoquindo 2500, Las Condes",
+            "phone": "+56 9 5678 9012",
+            "emergency_contact": "Isabel García - +56 9 6543 2109",
+            "insurance": "FONASA",
+            "blood_type": "O-",
+            "allergies": ["Peanuts"],
+            "medical_history": "Appendectomy 2015"
+        }
+    },
+    # Test Case 6: Multi-word first AND last name
+    {
+        "medical_identifier": "P006",
+        "first_name": "Ana María",
+        "last_name": "De La Cruz",
+        "rut": "16.789.012-3",
+        "birth_date": date(1990, 9, 12),
+        "gender": "F",
+        "information": {
+            "address": "Santa Rosa 1234, La Florida",
+            "phone": "+56 9 6789 0123",
+            "emergency_contact": "José De La Cruz - +56 9 5432 1098",
+            "insurance": "Isapre Banmédica",
+            "blood_type": "A-",
+            "allergies": ["Ibuprofen"],
+            "medical_history": "Chronic bronchitis"
+        }
+    },
+    # Test Case 7: Another multi-word first AND last name
+    {
+        "medical_identifier": "P007",
+        "first_name": "Juan Carlos",
+        "last_name": "Dos Santos",
+        "rut": "17.890.123-4",
+        "birth_date": date(1982, 2, 28),
+        "gender": "M",
+        "information": {
+            "address": "Gran Avenida 5678, San Miguel",
+            "phone": "+56 9 7890 1234",
+            "emergency_contact": "Claudia Dos Santos - +56 9 4321 0987",
+            "insurance": "FONASA",
+            "blood_type": "B+",
+            "allergies": [],
+            "medical_history": "Type 1 Diabetes, Hypertension"
+        }
+    },
+    # Test Case 8: Duplicate first name "Maria" (different spelling)
+    {
+        "medical_identifier": "P008",
+        "first_name": "Maria",
+        "last_name": "Fernández",
+        "rut": "18.901.234-5",
+        "birth_date": date(1995, 6, 15),
+        "gender": "F",
+        "information": {
+            "address": "Libertad 890, Viña del Mar",
+            "phone": "+56 9 8901 2345",
+            "emergency_contact": "Luis Fernández - +56 9 3210 9876",
+            "insurance": "Isapre Colmena",
+            "blood_type": "AB-",
+            "allergies": ["Codeine"],
+            "medical_history": "Seasonal allergies"
+        }
+    },
+    # Test Case 9: Common last name to test multiple matches
+    {
+        "medical_identifier": "P009",
+        "first_name": "Roberto",
+        "last_name": "García",
+        "rut": "19.012.345-6",
+        "birth_date": date(1970, 12, 5),
+        "gender": "M",
+        "information": {
+            "address": "Los Carrera 2345, Concepción",
+            "phone": "+56 9 9012 3456",
+            "emergency_contact": "Patricia García - +56 9 2109 8765",
+            "insurance": "FONASA",
+            "blood_type": "O+",
+            "allergies": ["Shellfish"],
+            "medical_history": "Gout, High cholesterol"
+        }
+    },
+    # Test Case 10: Hyphenated last name
+    {
+        "medical_identifier": "P010",
+        "first_name": "Carmen",
+        "last_name": "Silva-Henríquez",
+        "rut": "20.123.456-7",
+        "birth_date": date(1987, 8, 22),
+        "gender": "F",
+        "information": {
+            "address": "Pedro de Valdivia 456, Providencia",
+            "phone": "+56 9 0123 4567",
+            "emergency_contact": "Diego Silva - +56 9 1098 7654",
+            "insurance": "Isapre Vida Tres",
+            "blood_type": "A+",
+            "allergies": ["Dairy"],
+            "medical_history": "Lactose intolerance"
+        }
+    },
+    # Test Case 11: Another Ana to test common name search
+    {
+        "medical_identifier": "P011",
+        "first_name": "Ana",
+        "last_name": "Martínez",
+        "rut": "21.234.567-8",
+        "birth_date": date(1993, 4, 10),
+        "gender": "F",
+        "information": {
+            "address": "Vitacura 3000, Vitacura",
+            "phone": "+56 9 1234 5670",
+            "emergency_contact": "Sergio Martínez - +56 9 0987 6543",
+            "insurance": "FONASA",
+            "blood_type": "B-",
+            "allergies": ["Nuts"],
+            "medical_history": "No significant history"
+        }
+    },
+    # Test Case 12: Similar to existing patient (Garcia Lopez) but reversed
+    {
+        "medical_identifier": "P012",
+        "first_name": "López",
+        "last_name": "García",
+        "rut": "22.345.678-9",
+        "birth_date": date(1975, 11, 30),
+        "gender": "M",
+        "information": {
+            "address": "Recoleta 789, Recoleta",
+            "phone": "+56 9 2345 6701",
+            "emergency_contact": "Maria García - +56 9 9876 5432",
+            "insurance": "Isapre Consalud",
+            "blood_type": "O-",
+            "allergies": [],
+            "medical_history": "Hernia repair 2018"
+        }
+    },
+    # Test Case 13: Three-word last name
+    {
+        "medical_identifier": "P013",
+        "first_name": "Francisco",
+        "last_name": "Van Der Berg",
+        "rut": "23.456.789-0",
+        "birth_date": date(1968, 7, 14),
+        "gender": "M",
+        "information": {
+            "address": "Kennedy 4500, Vitacura",
+            "phone": "+56 9 3456 7012",
+            "emergency_contact": "Helena Van Der Berg - +56 9 8765 4321",
+            "insurance": "Isapre Cruz Blanca",
+            "blood_type": "A+",
+            "allergies": ["Penicillin"],
+            "medical_history": "Bypass surgery 2020"
+        }
+    },
+    # Test Case 14: Partial name match test
+    {
+        "medical_identifier": "P014",
+        "first_name": "Gabriela",
+        "last_name": "Garcés",
+        "rut": "24.567.890-1",
+        "birth_date": date(1991, 3, 8),
+        "gender": "F",
+        "information": {
+            "address": "Independencia 1500, Independencia",
+            "phone": "+56 9 4567 8012",
+            "emergency_contact": "Pablo Garcés - +56 9 7654 3210",
+            "insurance": "FONASA",
+            "blood_type": "AB+",
+            "allergies": ["Eggs"],
+            "medical_history": "Food allergies"
+        }
+    },
+    # Test Case 15: Another common name "Jose"
+    {
+        "medical_identifier": "P015",
+        "first_name": "Jose",
+        "last_name": "Ramírez",
+        "rut": "25.678.901-2",
+        "birth_date": date(1980, 10, 25),
+        "gender": "M",
+        "information": {
+            "address": "Miraflores 2100, Santiago",
+            "phone": "+56 9 5678 9023",
+            "emergency_contact": "Silvia Ramírez - +56 9 6543 2109",
+            "insurance": "Isapre Banmédica",
+            "blood_type": "O+",
+            "allergies": [],
+            "medical_history": "Arthritis"
         }
     }
 ]
 
 SAMPLE_BEDS = [
+    # Regular numbered rooms (floor 1)
     {"room": "101", "active": True, "available": True},
     {"room": "102", "active": True, "available": True},
     {"room": "103", "active": True, "available": False},
+    {"room": "105", "active": True, "available": True},
+    
+    # Regular numbered rooms (floor 2)
     {"room": "201", "active": True, "available": True},
     {"room": "202", "active": True, "available": True},
     {"room": "203", "active": False, "available": False},  # Out of service
+    {"room": "210", "active": True, "available": True},
+    
+    # Rooms with 'r' prefix (Rehabilitation wing)
+    {"room": "r101", "active": True, "available": True},
+    {"room": "r102", "active": True, "available": False},
+    {"room": "r103", "active": True, "available": True},
+    {"room": "r105", "active": True, "available": True},
+    {"room": "r201", "active": True, "available": True},
+    {"room": "r202", "active": True, "available": True},
+    
+    # Rooms with 'g' prefix (General wing)
+    {"room": "g101", "active": True, "available": True},
+    {"room": "g102", "active": True, "available": True},
+    {"room": "g201", "active": True, "available": True},
+    {"room": "g324", "active": True, "available": True},
+    {"room": "g325", "active": True, "available": False},
+    {"room": "g326", "active": True, "available": True},
+    
+    # ICU rooms
     {"room": "ICU-1", "active": True, "available": True},
     {"room": "ICU-2", "active": True, "available": False},
+    {"room": "ICU-3", "active": True, "available": True},
+    
+    # Emergency rooms
+    {"room": "ER-1", "active": True, "available": True},
+    {"room": "ER-2", "active": True, "available": True},
+    
+    # Maternity rooms
+    {"room": "MAT-101", "active": True, "available": True},
+    {"room": "MAT-102", "active": True, "available": True},
 ]
 
 SAMPLE_DOCUMENTS = [
@@ -375,38 +609,39 @@ async def seed_beds(session: AsyncSession) -> List[Bed]:
 
 
 async def seed_clinical_episodes(session: AsyncSession, patients: List[Patient], beds: List[Bed]) -> List[ClinicalEpisode]:
-    """Create sample clinical episodes."""
+    """Create sample clinical episodes with comprehensive bed assignments for testing."""
     episodes = []
     statuses = [EpisodeStatus.ACTIVE, EpisodeStatus.DISCHARGED, EpisodeStatus.TRANSFERRED]
 
+    # Get available beds only for active episodes
+    available_beds = [bed for bed in beds if bed.available and bed.active]
+    bed_index = 0
+
+    # Ensure every patient gets at least one episode
     for i, patient in enumerate(patients):
-        # Create 1-2 episodes per patient
-        num_episodes = random.randint(1, 2)
-
-        for j in range(num_episodes):
-            # Random bed assignment (can be None)
-            bed = random.choice(beds) if random.choice([True, False]) else None
-
-            # Random status
-            status = random.choice(statuses)
-
-            # Admission date (random within last 30 days)
-            admission_date = datetime.now() - timedelta(days=random.randint(1, 30))
+        # First 10 patients get active episodes with beds for better testing
+        if i < 10:
+            # Assign bed sequentially to ensure diverse room assignments
+            bed = available_beds[bed_index % len(available_beds)] if available_beds else None
+            bed_index += 1
+            
+            # Admission date (stagger them over last 30 days)
+            admission_date = datetime.now() - timedelta(days=i * 2)
 
             episode = ClinicalEpisode(
                 patient_id=patient.id,
-                status=status,
+                status=EpisodeStatus.ACTIVE,
                 bed_id=bed.id if bed else None,
                 admission_at=admission_date,
-                discharge_at=admission_date + timedelta(days=random.randint(3, 14)) if status != EpisodeStatus.ACTIVE else None,
-                expected_discharge=date.today() + timedelta(days=random.randint(1, 7)) if status == EpisodeStatus.ACTIVE else None
+                discharge_at=None,
+                expected_discharge=date.today() + timedelta(days=random.randint(3, 14))
             )
 
             session.add(episode)
             await session.flush()
 
             # Create episode documents
-            num_docs = min(random.randint(1, 3), len(SAMPLE_EPISODE_DOCUMENTS))
+            num_docs = min(random.randint(1, 2), len(SAMPLE_EPISODE_DOCUMENTS))
             for doc_data in random.sample(SAMPLE_EPISODE_DOCUMENTS, num_docs):
                 episode_doc = EpisodeDocument(
                     episode_id=episode.id,
@@ -416,7 +651,7 @@ async def seed_clinical_episodes(session: AsyncSession, patients: List[Patient],
                 session.add(episode_doc)
 
             # Create episode information records
-            num_info = min(random.randint(2, 3), len(SAMPLE_EPISODE_INFO))
+            num_info = min(random.randint(1, 2), len(SAMPLE_EPISODE_INFO))
             for info_data in random.sample(SAMPLE_EPISODE_INFO, num_info):
                 episode_info = ClinicalEpisodeInformation(
                     episode_id=episode.id,
@@ -427,11 +662,76 @@ async def seed_clinical_episodes(session: AsyncSession, patients: List[Patient],
                 session.add(episode_info)
 
             episodes.append(episode)
-            status_str = "Active" if status == EpisodeStatus.ACTIVE else "Discharged" if status == EpisodeStatus.DISCHARGED else "Transferred"
-            bed_info = f"Bed: {bed.room}" if bed else "No bed assigned"
-            print(f"Created episode for {patient.first_name} {patient.last_name}: {status_str}, {bed_info}")
+            bed_info = f"Room {bed.room}" if bed else "No bed assigned"
+            print(f"Created ACTIVE episode for {patient.first_name} {patient.last_name}: {bed_info}")
+        
+        # Remaining patients get a mix of statuses
+        else:
+            num_episodes = 1  # One episode per remaining patient
+            
+            for j in range(num_episodes):
+                # Random bed assignment (can be None for discharged)
+                status = random.choice(statuses)
+                bed = None
+                
+                if status == EpisodeStatus.ACTIVE and available_beds:
+                    bed = available_beds[bed_index % len(available_beds)]
+                    bed_index += 1
+                elif status != EpisodeStatus.ACTIVE:
+                    # Discharged/transferred patients might have had a bed
+                    bed = random.choice(beds) if random.random() > 0.3 else None
+                
+                # Admission date (random within last 60 days for discharged)
+                admission_date = datetime.now() - timedelta(days=random.randint(1, 60))
+                
+                episode = ClinicalEpisode(
+                    patient_id=patient.id,
+                    status=status,
+                    bed_id=bed.id if bed else None,
+                    admission_at=admission_date,
+                    discharge_at=admission_date + timedelta(days=random.randint(3, 21)) if status != EpisodeStatus.ACTIVE else None,
+                    expected_discharge=date.today() + timedelta(days=random.randint(1, 10)) if status == EpisodeStatus.ACTIVE else None
+                )
+                
+                session.add(episode)
+                await session.flush()
+                
+                # Create episode documents (fewer for discharged)
+                if random.random() > 0.3:
+                    num_docs = min(random.randint(1, 2), len(SAMPLE_EPISODE_DOCUMENTS))
+                    for doc_data in random.sample(SAMPLE_EPISODE_DOCUMENTS, num_docs):
+                        episode_doc = EpisodeDocument(
+                            episode_id=episode.id,
+                            document_type=EpisodeDocumentType(doc_data["document_type"]),
+                            file_url=doc_data["file_url"]
+                        )
+                        session.add(episode_doc)
+                
+                # Create episode information records
+                if random.random() > 0.4:
+                    num_info = min(random.randint(1, 2), len(SAMPLE_EPISODE_INFO))
+                    for info_data in random.sample(SAMPLE_EPISODE_INFO, num_info):
+                        episode_info = ClinicalEpisodeInformation(
+                            episode_id=episode.id,
+                            info_type=EpisodeInfoType(info_data["info_type"]),
+                            title=info_data["title"],
+                            value=info_data["value"]
+                        )
+                        session.add(episode_info)
+                
+                episodes.append(episode)
+                status_str = status.value.upper()
+                bed_info = f"Room {bed.room}" if bed else "No bed"
+                print(f"Created {status_str} episode for {patient.first_name} {patient.last_name}: {bed_info}")
 
     await session.commit()
+    print(f"\nEpisode Status Summary:")
+    print(f"  Active: {len([e for e in episodes if e.status == EpisodeStatus.ACTIVE])}")
+    print(f"  Discharged: {len([e for e in episodes if e.status == EpisodeStatus.DISCHARGED])}")
+    print(f"  Transferred: {len([e for e in episodes if e.status == EpisodeStatus.TRANSFERRED])}")
+    print(f"  With beds: {len([e for e in episodes if e.bed_id is not None])}")
+    print(f"  Without beds: {len([e for e in episodes if e.bed_id is None])}")
+    
     return episodes
 
 
