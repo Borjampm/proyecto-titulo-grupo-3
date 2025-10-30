@@ -46,6 +46,37 @@ async def list_clinical_episodes(
     return result.scalars().all()
 
 
+@router.get("/{episode_id}", response_model=Union[ClinicalEpisodeWithPatient, ClinicalEpisode])
+async def get_clinical_episode(
+    episode_id: UUID,
+    include: ClinicalEpisodeInclude | None = None,
+    session: AsyncSession = Depends(get_session)
+) -> Union[ClinicalEpisodeWithPatient, ClinicalEpisode]:
+    """
+    Get a specific clinical episode by ID.
+    
+    Optionally include related patient information by passing include=patient.
+    """
+    if include == ClinicalEpisodeInclude.PATIENT:
+        result = await session.execute(
+            select(ClinicalEpisodeModel)
+            .where(ClinicalEpisodeModel.id == episode_id)
+            .options(selectinload(ClinicalEpisodeModel.patient))
+        )
+    else:
+        result = await session.execute(
+            select(ClinicalEpisodeModel)
+            .where(ClinicalEpisodeModel.id == episode_id)
+        )
+    
+    episode = result.scalar_one_or_none()
+    
+    if not episode:
+        raise HTTPException(status_code=404, detail="Clinical episode not found")
+    
+    return episode
+
+
 @router.get("/{episode_id}/history", response_model=EpisodeHistory)
 async def get_episode_history(
     episode_id: UUID,
