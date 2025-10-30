@@ -10,6 +10,7 @@ from app.models.task_instance import (
     TaskInstance as TaskInstanceModel,
     TaskStatus
 )
+from app.models.task_status_history import TaskStatusHistory
 from app.schemas.task_instance import (
     TaskInstance,
     TaskInstanceCreate,
@@ -98,7 +99,7 @@ async def update_task(
     Update a task instance.
 
     Can be used to update any field including status, description,
-    title, etc.
+    title, etc. If status is changed, automatically creates a status history record.
 
     Args:
         task_id: The UUID of the task instance
@@ -124,8 +125,25 @@ async def update_task(
 
     # Update only the fields that were provided
     update_data = task_update.model_dump(exclude_unset=True)
+    
+    # Check if status is being updated
+    old_status = task.status
+    status_changed = False
+    
     for field, value in update_data.items():
+        if field == "status" and value != old_status:
+            status_changed = True
         setattr(task, field, value)
+    
+    # Create status history record if status changed
+    if status_changed:
+        status_history = TaskStatusHistory(
+            task_id=task.id,
+            old_status=old_status,
+            new_status=task.status,
+            notes=f"Status updated from {old_status.value} to {task.status.value}"
+        )
+        session.add(status_history)
 
     await session.commit()
     await session.refresh(task)
@@ -141,6 +159,8 @@ async def update_task_status(
 ) -> TaskInstance:
     """
     Update only the status of a task instance.
+    
+    Automatically creates a status history record tracking the change.
 
     Args:
         task_id: The UUID of the task instance
@@ -164,7 +184,22 @@ async def update_task_status(
             detail=f"Task with id {task_id} not found"
         )
 
-    task.status = TaskStatus(new_status.value)
+    # Store old status before updating
+    old_status = task.status
+    new_status_enum = TaskStatus(new_status.value)
+    
+    # Only create history if status actually changed
+    if old_status != new_status_enum:
+        task.status = new_status_enum
+        
+        # Create status history record
+        status_history = TaskStatusHistory(
+            task_id=task.id,
+            old_status=old_status,
+            new_status=new_status_enum,
+            notes=f"Status updated from {old_status.value} to {new_status_enum.value}"
+        )
+        session.add(status_history)
 
     await session.commit()
     await session.refresh(task)
@@ -213,6 +248,8 @@ async def create_task(
 ) -> TaskInstance:
     """
     Create a new task instance.
+    
+    Automatically creates an initial status history record.
 
     Args:
         task_create: The task data
@@ -232,6 +269,17 @@ async def create_task(
     )
 
     session.add(task)
+    await session.flush()  # Get the task ID
+    
+    # Create initial status history record
+    status_history = TaskStatusHistory(
+        task_id=task.id,
+        old_status=None,  # No previous status for new tasks
+        new_status=task.status,
+        notes="Task created"
+    )
+    session.add(status_history)
+    
     await session.commit()
     await session.refresh(task)
 
