@@ -314,6 +314,42 @@ uv run pytest tests/unit/test_patients.py::TestGetPatients::test_list_patients_e
 uv run pytest --cov=app --cov-report=html
 ```
 
+Then open `htmlcov/index.html` in your browser to see the coverage report.
+
+**View coverage in terminal:**
+
+```bash
+# Show coverage summary with missing lines
+uv run pytest --cov=app --cov-report=term-missing
+
+# Show only coverage summary
+uv run pytest --cov=app --cov-report=term
+```
+
+**Coverage options:**
+
+- `--cov=app` - Measure coverage for the `app` package
+- `--cov-report=html` - Generate HTML report (opens `htmlcov/index.html`)
+- `--cov-report=term-missing` - Show terminal output with missing line numbers
+- `--cov-report=term` - Show only coverage percentage in terminal
+- `--cov-report=xml` - Generate XML report (useful for CI/CD)
+
+**Example output:**
+```
+Name                                          Stmts   Miss  Cover   Missing
+---------------------------------------------------------------------------
+app/routers/patients.py                          19      3    84%   18, 37-38
+app/routers/task_instances.py                    77     44    43%   56-57, 81-89
+---------------------------------------------------------------------------
+TOTAL                                           753    110    85%
+```
+
+This shows:
+- **Stmts**: Total statements
+- **Miss**: Missed statements
+- **Cover**: Coverage percentage
+- **Missing**: Line numbers of missed code
+
 ### Test Database Configuration
 
 - **Host:** `localhost`
