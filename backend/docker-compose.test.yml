@@ -1,0 +1,23 @@
+services:
+  postgres_test:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres
+    container_name: postgres_test_db
+    environment:
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_db
+    ports:
+      - "5433:5432"  # Use port 5433 to avoid conflict with dev database
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_test_data:
+

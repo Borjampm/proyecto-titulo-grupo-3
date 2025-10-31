@@ -13,7 +13,7 @@ A modern, async FastAPI application for patient management with PostgreSQL datab
 - [Database Migrations](#database-migrations)
 - [Development](#development)
 - [Testing](#testing)
-- [Troubleshooting](#troubleshooting)
+- [Additional Resources](#additional-resources)
 
 ## Prerequisites
 
@@ -114,14 +114,14 @@ DATABASE_URL=postgresql+asyncpg://admin:admin@localhost:5432/mydatabase
 #### Build the PostgreSQL Image
 
 ```bash
-docker build -f Dockerfile.postgress_test -t my-postgres14 .
+docker build -f Dockerfile.postgres -t my-postgres14 .
 ```
 
 #### Run the Database Container
 
 ```bash
 docker run -d \
-  --name test-database \
+  --name postgres-database \
   -e POSTGRES_USER=admin \
   -e POSTGRES_PASSWORD=admin \
   -e POSTGRES_DB=mydatabase \
@@ -133,8 +133,8 @@ docker run -d \
 #### Verify Database is Running
 
 ```bash
-docker ps | grep test-database
-docker logs test-database
+docker ps | grep postgres-database
+docker logs postgres-database
 ```
 
 #### Database Connection Details
@@ -273,6 +273,68 @@ uv add --dev pytest pytest-asyncio httpx
 
 After adding dependencies, both `pyproject.toml` and `uv.lock` will be updated. Commit both files.
 
+## 🧪 Testing
+
+This project includes comprehensive endpoint testing with PostgreSQL support.
+
+### Prerequisites
+
+The tests require Docker to run a separate PostgreSQL test database (to avoid conflicts with development data and support PostgreSQL-specific features like JSONB).
+
+### Quick Start
+
+1. **Start the test database:**
+   ```bash
+   docker-compose -f docker-compose.test.yml up -d
+   ```
+
+2. **Run all tests:**
+   ```bash
+   uv run pytest
+   ```
+
+3. **Stop the test database** (when done):
+   ```bash
+   docker-compose -f docker-compose.test.yml down
+   ```
+
+### Common Test Commands
+
+```bash
+# Run all tests with verbose output
+uv run pytest -v
+
+# Run specific test file
+uv run pytest tests/unit/test_patients.py
+
+# Run specific test function
+uv run pytest tests/unit/test_patients.py::TestGetPatients::test_list_patients_empty
+
+# Run with coverage report
+uv run pytest --cov=app --cov-report=html
+```
+
+### Test Database Configuration
+
+- **Host:** `localhost`
+- **Port:** `5433` (different from dev database to avoid conflicts)
+- **Database:** `test_db`
+- **User:** `test_user`
+- **Password:** `test_password`
+
+### Writing Tests
+
+Tests must be **async** since the application uses async database operations:
+
+```python
+class TestEndpoint:
+    async def test_example(self, client):
+        """Test example endpoint."""
+        response = await client.get("/endpoint/")
+        assert response.status_code == 200
+```
+
+For more details, see [tests/README.md](tests/README.md).
 
 ## 📝 Additional Resources
 
