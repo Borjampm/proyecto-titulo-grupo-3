@@ -72,18 +72,3 @@ jobs:
       - name: Check coverage threshold
         run: |
           uv run coverage report --fail-under=80
-
-  # Optional: Security scanning
-  security:
-    name: Security Scan
-    runs-on: ubuntu-latest
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Run Bandit (security linter)
-        run: |
-          pip install bandit
-          bandit -r app/ -ll
-        continue-on-error: true
