@@ -6,6 +6,17 @@ __pycache__
 
 .DS_Store
 
-# tests
+# Coverage
 .coverage
 htmlcov/
+coverage.xml
+.coverage.*
+
+# Pytest
+.pytest_cache/
+
+# MyPy
+.mypy_cache/
+
+# Ruff
+.ruff_cache/
