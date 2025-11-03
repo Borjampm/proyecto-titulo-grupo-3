@@ -1,0 +1,44 @@
+# Use Python 3.12 slim image as base
+FROM python:3.12-slim AS builder
+
+# Install uv for fast dependency management
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Set working directory
+WORKDIR /app
+
+# Copy dependency files and README (required by pyproject.toml)
+COPY pyproject.toml uv.lock README.md ./
+
+# Install dependencies in a virtual environment
+RUN uv sync --frozen --no-dev
+
+# Final stage
+FROM python:3.12-slim
+
+# Set working directory
+WORKDIR /app
+
+# Copy virtual environment from builder
+COPY --from=builder /app/.venv /app/.venv
+
+# Copy application code
+COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini ./
+COPY scripts ./scripts
+COPY docker-entrypoint.sh ./
+
+# Make entrypoint script executable
+RUN chmod +x docker-entrypoint.sh
+
+# Set environment variables
+ENV PATH="/app/.venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
+
+# Expose the port the app runs on
+EXPOSE 8000
+
+# Run the application with entrypoint script
+CMD ["./docker-entrypoint.sh"]
+
