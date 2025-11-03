@@ -277,63 +277,72 @@ docker exec fastapi-backend alembic upgrade head
 docker exec fastapi-backend alembic current
 ```
 
-### Docker Compose (Full Stack)
+### Docker Compose (Full Stack - Recommended)
 
-For running both the database and API together, create a `docker-compose.yml`:
+The easiest way to run both the database and API together is using Docker Compose. A `docker-compose.yml` file is already configured in the project.
 
-```yaml
-version: '3.8'
+**What it includes:**
+- PostgreSQL 14 database with health checks
+- FastAPI backend with automatic migrations on startup
+- Persistent database storage
+- Isolated network for services
+- Proper service dependencies
 
-services:
-  postgres:
-    build:
-      context: .
-      dockerfile: Dockerfile.postgres
-    environment:
-      POSTGRES_USER: admin
-      POSTGRES_PASSWORD: admin
-      POSTGRES_DB: mydatabase
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U admin -d mydatabase"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile.API
-    environment:
-      DATABASE_URL: postgresql+asyncpg://admin:admin@postgres:5432/mydatabase
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-
-volumes:
-  postgres_data:
-```
-
-Start the full stack:
+**Start the full stack:**
 
 ```bash
-# Start all services
-docker-compose up -d
+# Build and start all services in detached mode
+docker-compose up -d --build
 
-# View logs
+# View all logs
 docker-compose logs -f
 
-# Stop all services
+# View logs for specific service
+docker-compose logs -f api
+docker-compose logs -f postgres
+
+# Check service status
+docker-compose ps
+```
+
+**Test the API:**
+
+```bash
+# Health check
+curl http://localhost:8000/
+
+# View interactive docs
+open http://localhost:8000/docs
+```
+
+**Manage the stack:**
+
+```bash
+# Stop all services (keeps data)
+docker-compose stop
+
+# Start stopped services
+docker-compose start
+
+# Stop and remove containers (keeps data)
 docker-compose down
 
-# Stop and remove volumes (clean slate)
+# Stop and remove everything including volumes (clean slate)
 docker-compose down -v
+
+# Rebuild services after code changes
+docker-compose up -d --build
+
+# View resource usage
+docker-compose stats
 ```
+
+**Notes:**
+- Database migrations run automatically when the API starts
+- Database data persists in a Docker volume named `backend_postgres_data`
+- The API waits for the database to be healthy before starting
+- Access the API at http://localhost:8000
+- Access the database at localhost:5432
 
 ## 📚 API Documentation
 
