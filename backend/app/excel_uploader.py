@@ -321,14 +321,14 @@ class ExcelUploader:
         Parse patient basic data from Excel row.
 
         Expected columns from "Score Social.xlsx":
-        - RUT: Patient's RUT (may be empty for anonymous data)
+        - RUT: Patient's RUT (may be empty for anonymous data) - Used as medical_identifier
         - Nombre: Patient's full name (may be empty for anonymous data)
-        - Episodio / Estadía: Episode identifier (used as medical identifier)
+        - Episodio / Estadía: Episode identifier (stored separately in episode data)
         - Fecha de nacimiento: Birth date
         
         If RUT and Nombre are present, they are used. If empty (anonymous data), 
         we generate realistic placeholder data:
-        - Valid RUT with proper verification digit
+        - Valid RUT with proper verification digit (used as medical_identifier)
         - Common first and last names
         - Consistent data based on episode ID (same episode always generates same name/RUT)
         
@@ -336,33 +336,35 @@ class ExcelUploader:
         Example with anonymous: Empty fields → Generated "María González", "18.234.567-8"
         """
         try:
-            # Use Episodio / Estadía as identifier
+            # Get episode identifier to use as seed for generating consistent placeholder data
             episodio_raw = row.get("Episodio / Estadía")
             
-            # Only skip if episodio is completely missing
+            # Only skip if episodio is completely missing (we need it for seed generation)
             if pd.isna(episodio_raw):
                 logger.warning("Skipping row with missing Episodio / Estadía")
                 return None
             
-            medical_identifier = str(episodio_raw).strip()
-            if not medical_identifier or medical_identifier == "" or medical_identifier.lower() == "nan":
+            episodio_str = str(episodio_raw).strip()
+            if not episodio_str or episodio_str == "" or episodio_str.lower() == "nan":
                 logger.warning("Skipping row with empty Episodio / Estadía")
                 return None
             
-            # Check if RUT exists in the data
+            # Check if RUT exists in the data - RUT is the medical_identifier
             rut_raw = row.get("RUT")
             if pd.isna(rut_raw) or str(rut_raw).strip() == "" or str(rut_raw).strip().lower() == "nan":
-                # Generate placeholder RUT
-                rut = generate_rut(medical_identifier)
+                # Generate placeholder RUT using episode as seed for consistency
+                rut = generate_rut(episodio_str)
+                medical_identifier = rut  # Generated RUT is the medical identifier
             else:
                 # Use the real RUT from the data
                 rut = str(rut_raw).strip()
+                medical_identifier = rut  # Real RUT is the medical identifier
             
             # Check if Nombre exists in the data
             nombre_raw = row.get("Nombre")
             if pd.isna(nombre_raw) or str(nombre_raw).strip() == "" or str(nombre_raw).strip().lower() == "nan":
-                # Generate placeholder name
-                first_name, last_name = get_name(medical_identifier)
+                # Generate placeholder name using episode as seed
+                first_name, last_name = get_name(episodio_str)
             else:
                 # Use the real name from the data
                 nombre = str(nombre_raw).strip()
