@@ -16,6 +16,12 @@ from dotenv import load_dotenv
 load_dotenv(".env")
 DATABASE_URL = os.environ["DATABASE_URL"]
 
+# Convert postgres:// or postgresql:// to postgresql+asyncpg://
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
+elif DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
 # Import Base AFTER env vars are loaded so app.db can see DATABASE_URL if needed
 from app.db import Base
 import app.models
