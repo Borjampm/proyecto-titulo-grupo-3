@@ -8,6 +8,8 @@ dependencies = [
     "alembic>=1.17.0",
     "asyncpg>=0.30.0",
     "fastapi[standard]",
+    "openpyxl>=3.1.0",
+    "pandas>=2.2.0",
     "pydantic-settings>=2.11.0",
     "python-dotenv>=1.1.1",
     "sqlalchemy[asyncio]>=2.0.44",
@@ -21,6 +23,8 @@ dev = "scripts.dev:main"
 db-seed = "scripts.database_functions:seed"
 db-reset = "scripts.database_functions:reset"
 db-clear = "scripts.database_functions:clear"
+# excel uploader
+upload-excel = "app.excel_uploader:main"
 
 
 [build-system]

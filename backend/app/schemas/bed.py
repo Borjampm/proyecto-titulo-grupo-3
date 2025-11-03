@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 class BedBase(BaseModel):
     """Base schema for bed"""
+    room: str
     active: bool = True
     available: bool = True
 
