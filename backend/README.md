@@ -9,6 +9,7 @@ A modern, async FastAPI application for patient management with PostgreSQL datab
 - [Environment Configuration](#environment-configuration)
 - [Database Setup](#database-setup)
 - [Running the Application](#running-the-application)
+- [Running with Docker](#running-with-docker)
 - [API Documentation](#api-documentation)
 - [Database Migrations](#database-migrations)
 - [Development](#development)
@@ -201,6 +202,147 @@ The server will be available at:
 curl http://localhost:8000/
 # Expected: {"message": "Hello, world!"}
 ```
+
+## 🐳 Running with Docker
+
+### Build the API Docker Image
+
+```bash
+docker build -f Dockerfile.API -t fastapi-backend .
+```
+
+### Run the API Container
+
+#### Option 1: Using environment file (Recommended)
+
+Create a `.env` file with your configuration (if not already created):
+
+```env
+DATABASE_URL=database_url
+```
+
+**Note:** When running the API in Docker, use `host.docker.internal` instead of `localhost` to connect to a database running on your host machine (macOS/Windows). On Linux, use `--network host` or connect to the database container by name if using Docker Compose.
+
+Run the container:
+
+```bash
+docker run -d \
+  --name fastapi-backend \
+  -p 8000:8000 \
+  --env-file .env \
+  fastapi-backend
+```
+
+#### Option 2: Using environment variables directly
+
+```bash
+docker run -d \
+  --name fastapi-backend \
+  -p 8000:8000 \
+  -e DATABASE_URL=postgresql+asyncpg://admin:admin@host.docker.internal:5432/mydatabase \
+  fastapi-backend
+```
+
+### Manage the Container
+
+```bash
+# View logs
+docker logs fastapi-backend
+
+# Follow logs in real-time
+docker logs -f fastapi-backend
+
+# Stop the container
+docker stop fastapi-backend
+
+# Start the container
+docker start fastapi-backend
+
+# Remove the container
+docker rm fastapi-backend
+
+# View running containers
+docker ps
+```
+
+### Run Database Migrations in Container
+
+If you need to run migrations inside the container:
+
+```bash
+# Execute migrations
+docker exec fastapi-backend alembic upgrade head
+
+# Check current migration version
+docker exec fastapi-backend alembic current
+```
+
+### Docker Compose (Full Stack - Recommended)
+
+The easiest way to run both the database and API together is using Docker Compose. A `docker-compose.yml` file is already configured in the project.
+
+**What it includes:**
+- PostgreSQL 14 database with health checks
+- FastAPI backend with automatic migrations on startup
+- Persistent database storage
+- Isolated network for services
+- Proper service dependencies
+
+**Start the full stack:**
+
+```bash
+# Build and start all services in detached mode
+docker-compose up -d --build
+
+# View all logs
+docker-compose logs -f
+
+# View logs for specific service
+docker-compose logs -f api
+docker-compose logs -f postgres
+
+# Check service status
+docker-compose ps
+```
+
+**Test the API:**
+
+```bash
+# Health check
+curl http://localhost:8000/
+
+# View interactive docs
+open http://localhost:8000/docs
+```
+
+**Manage the stack:**
+
+```bash
+# Stop all services (keeps data)
+docker-compose stop
+
+# Start stopped services
+docker-compose start
+
+# Stop and remove containers (keeps data)
+docker-compose down
+
+# Stop and remove everything including volumes (clean slate)
+docker-compose down -v
+
+# Rebuild services after code changes
+docker-compose up -d --build
+
+# View resource usage
+docker-compose stats
+```
+
+**Notes:**
+- Database migrations run automatically when the API starts
+- Database data persists in a Docker volume named `backend_postgres_data`
+- The API waits for the database to be healthy before starting
+- Access the API at http://localhost:8000
+- Access the database at localhost:5432
 
 ## 📚 API Documentation
 
