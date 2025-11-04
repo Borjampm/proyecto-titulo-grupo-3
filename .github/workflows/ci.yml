@@ -1,0 +1,81 @@
+name: CI Pipeline
+
+on:
+  # Run on pull requests to main
+  pull_request:
+    branches: [main]
+  # Run on pushes to main (after merge)
+  push:
+    branches: [main]
+  # Allow manual workflow runs
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    defaults:
+      run:
+        working-directory: backend
+    
+    services:
+      postgres:
+        image: postgres:14
+        env:
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5433:5432
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v2
+        with:
+          enable-cache: true
+          cache-dependency-glob: "backend/uv.lock"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+      
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..30}; do
+            pg_isready -h localhost -p 5433 -U test_user && break
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+      
+      - name: Run tests with coverage
+        env:
+          DATABASE_URL: postgresql+asyncpg://test_user:test_password@localhost:5433/test_db
+          TEST_DATABASE_URL: postgresql+asyncpg://test_user:test_password@localhost:5433/test_db
+        run: |
+          uv run pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
+      
+      - name: Upload coverage to Codecov (optional)
+        uses: codecov/codecov-action@v4
+        if: github.event_name == 'pull_request'
+        with:
+          file: ./backend/coverage.xml
+          fail_ci_if_error: false
+      
+      - name: Check coverage threshold
+        env:
+          DATABASE_URL: postgresql+asyncpg://test_user:test_password@localhost:5433/test_db
+        run: |
+          uv run coverage report --fail-under=80
