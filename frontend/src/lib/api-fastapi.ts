@@ -43,21 +43,29 @@ class ApiClient {
   constructor() {
     this.baseUrl = config.BACKEND_URL;
     this.timeout = config.REQUEST_TIMEOUT;
-    this.token = this.getStoredToken();
+    // No acceder a localStorage durante la inicialización (puede ejecutarse en el servidor)
+    this.token = null;
   }
 
   private getStoredToken(): string | null {
+    if (typeof window === 'undefined') {
+      return null;
+    }
     return localStorage.getItem('auth_token');
   }
 
   setToken(token: string) {
     this.token = token;
-    localStorage.setItem('auth_token', token);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('auth_token', token);
+    }
   }
 
   clearToken() {
     this.token = null;
-    localStorage.removeItem('auth_token');
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('auth_token');
+    }
   }
 
   private async request<T>(
@@ -65,6 +73,11 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
+
+    // Obtener token si no está establecido (para requests en el cliente)
+    if (!this.token && typeof window !== 'undefined') {
+      this.token = this.getStoredToken();
+    }
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -131,6 +144,11 @@ class ApiClient {
 
   async uploadFile<T>(endpoint: string, formData: FormData): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
+
+    // Obtener token si no está establecido (para requests en el cliente)
+    if (!this.token && typeof window !== 'undefined') {
+      this.token = this.getStoredToken();
+    }
 
     const headers: Record<string, string> = {};
     if (this.token) {

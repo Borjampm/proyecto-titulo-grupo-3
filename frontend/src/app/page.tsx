@@ -23,11 +23,6 @@ import { Toaster } from '../components/ui/sonner';
 // Importar el adaptador de FastAPI
 import * as apiFastAPI from '../lib/api-fastapi';
 
-// Reemplazar las funciones de API mock con las de FastAPI
-if (typeof window !== 'undefined') {
-  (window as any).__API__ = apiFastAPI;
-}
-
 type View = 'dashboard' | 'patients' | 'referral' | 'upload';
 
 function AppContent() {
