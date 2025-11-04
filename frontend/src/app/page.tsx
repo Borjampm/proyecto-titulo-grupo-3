@@ -1,103 +1,142 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState } from 'react';
+import { AuthProvider, useAuth } from '../contexts/AuthContext';
+import { LoginPage } from '../components/LoginPage';
+import { LoadingScreen } from '../components/LoadingScreen';
+import { Header } from '../components/Header';
+import { Dashboard } from '../components/Dashboard';
+import { PatientList } from '../components/PatientList';
+import { PatientDetail } from '../components/PatientDetail';
+import { ReferralForm } from '../components/ReferralForm';
+import { DataUpload } from '../components/DataUpload';
+import { Patient } from '../types';
+import { 
+  LayoutDashboard, 
+  Users, 
+  FileText, 
+  Upload
+} from 'lucide-react';
+import { cn } from '../components/ui/utils';
+import { Toaster } from '../components/ui/sonner';
+
+// Importar el adaptador de FastAPI
+import * as apiFastAPI from '../lib/api-fastapi';
+
+// Reemplazar las funciones de API mock con las de FastAPI
+if (typeof window !== 'undefined') {
+  (window as any).__API__ = apiFastAPI;
+}
+
+type View = 'dashboard' | 'patients' | 'referral' | 'upload';
+
+function AppContent() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [currentView, setCurrentView] = useState<View>('dashboard');
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Mostrar pantalla de carga mientras se verifica la autenticación
+  if (isLoading) {
+    return <LoadingScreen />;
+  }
+
+  // Si no está autenticado, mostrar página de login
+  if (!isAuthenticated) {
+    return <LoginPage />;
+  }
+
+  const navigation = [
+    { id: 'dashboard' as View, name: 'Panel de Control', icon: LayoutDashboard },
+    { id: 'patients' as View, name: 'Gestión de Casos', icon: Users },
+    { id: 'referral' as View, name: 'Derivar Paciente', icon: FileText },
+    { id: 'upload' as View, name: 'Carga de Datos', icon: Upload },
+  ];
+
+  const handleSelectPatient = (patient: Patient) => {
+    setSelectedPatient(patient);
+  };
+
+  const handleBackToList = () => {
+    setSelectedPatient(null);
+  };
+
+  const renderContent = () => {
+    if (selectedPatient) {
+      return <PatientDetail patient={selectedPatient} onBack={handleBackToList} />;
+    }
+
+    switch (currentView) {
+      case 'dashboard':
+        return <Dashboard />;
+      case 'patients':
+        return <PatientList onSelectPatient={handleSelectPatient} />;
+      case 'referral':
+        return <ReferralForm />;
+      case 'upload':
+        return <DataUpload />;
+      default:
+        return <Dashboard />;
+    }
+  };
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="min-h-screen bg-muted/30">
+      {/* Header */}
+      <Header sidebarOpen={sidebarOpen} onToggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+      <div className="flex">
+        {/* Sidebar */}
+        <aside
+          className={cn(
+            'bg-white border-r h-[calc(100vh-73px)] sticky top-[73px] transition-all duration-300',
+            sidebarOpen ? 'w-64' : 'w-0 lg:w-64',
+            'lg:block',
+            !sidebarOpen && 'hidden'
+          )}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          <nav className="p-4 space-y-2">
+            {navigation.map((item) => {
+              const Icon = item.icon;
+              const isActive = currentView === item.id && !selectedPatient;
+              
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setCurrentView(item.id);
+                    setSelectedPatient(null);
+                    setSidebarOpen(false);
+                  }}
+                  className={cn(
+                    'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors',
+                    isActive
+                      ? 'bg-primary text-primary-foreground'
+                      : 'hover:bg-muted text-foreground'
+                  )}
+                >
+                  <Icon className="w-5 h-5" />
+                  <span>{item.name}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </aside>
+
+        {/* Main Content */}
+        <main className="flex-1 p-6 lg:p-8 max-w-[1600px] mx-auto w-full">
+          {renderContent()}
+        </main>
+      </div>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+      <Toaster />
+    </AuthProvider>
   );
 }
