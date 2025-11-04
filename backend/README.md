@@ -514,6 +514,55 @@ class TestEndpoint:
 
 For more details, see [tests/README.md](tests/README.md).
 
+## 📤 Excel Upload Feature
+
+Upload patient and bed data from Excel files via API endpoints.
+
+### API Endpoints
+
+**1. Upload Beds** - `POST /excel/upload-beds`
+```javascript
+const formData = new FormData();
+formData.append('file', bedsFile); // Camas NWP1 Excel file
+
+const response = await fetch('http://localhost:8000/excel/upload-beds', {
+  method: 'POST',
+  body: formData,
+});
+
+const result = await response.json();
+// { status: "success", beds_created: 45, message: "..." }
+```
+
+**2. Upload Patients** - `POST /excel/upload-patients`
+```javascript
+const formData = new FormData();
+formData.append('file', patientsFile); // Score Social Excel file
+
+const response = await fetch('http://localhost:8000/excel/upload-patients', {
+  method: 'POST',
+  body: formData,
+});
+
+const result = await response.json();
+// { status: "success", patients_processed: 128, message: "..." }
+```
+
+**3. Upload Both** - `POST /excel/upload-all`
+```javascript
+const formData = new FormData();
+formData.append('beds_file', bedsFile);
+formData.append('patients_file', patientsFile);
+
+const response = await fetch('http://localhost:8000/excel/upload-all', {
+  method: 'POST',
+  body: formData,
+});
+
+const result = await response.json();
+// { status: "success", beds_created: 45, patients_processed: 128 }
+```
+
 ## 📝 Additional Resources
 
 - [FastAPI Documentation](https://fastapi.tiangolo.com/)

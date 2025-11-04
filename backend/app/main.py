@@ -4,6 +4,7 @@ from app.deps import lifespan
 from app.routers.patients import router as patients_router
 from app.routers.clinical_episodes import router as clinical_episodes_router
 from app.routers.task_instances import router as task_instances_router
+from app.routers.excel_upload import router as excel_upload_router
 
 app = FastAPI(lifespan=lifespan)
 
@@ -16,3 +17,4 @@ async def read_root() -> dict[str, str]:
 app.include_router(patients_router)
 app.include_router(clinical_episodes_router)
 app.include_router(task_instances_router)
+app.include_router(excel_upload_router)
