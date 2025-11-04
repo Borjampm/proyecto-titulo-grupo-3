@@ -71,7 +71,7 @@ export function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-muted-foreground">Alto Riesgo</p>
-              <p className="mt-1 text-red-600">{stats.highRiskCount}</p>
+              <p className="mt-1 text-red-600">{stats.highRisk}</p>
             </div>
             <AlertTriangle className="w-8 h-8 text-red-600" />
           </div>
@@ -81,7 +81,7 @@ export function Dashboard() {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-muted-foreground">Riesgo Medio</p>
-              <p className="mt-1 text-yellow-600">{stats.mediumRiskCount}</p>
+              <p className="mt-1 text-yellow-600">{stats.mediumRisk}</p>
             </div>
             <Activity className="w-8 h-8 text-yellow-600" />
           </div>
@@ -90,8 +90,8 @@ export function Dashboard() {
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-muted-foreground">Alta Pendiente</p>
-              <p className="mt-1">{stats.pendingDischarge}</p>
+              <p className="text-muted-foreground">Desviaciones</p>
+              <p className="mt-1">{stats.deviations}</p>
             </div>
             <TrendingUp className="w-8 h-8 text-orange-600" />
           </div>

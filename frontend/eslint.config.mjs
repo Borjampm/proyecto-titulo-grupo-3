@@ -35,6 +35,7 @@ const eslintConfig = [
       "@typescript-eslint/no-var-requires": "off",
       "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
       "react/react-in-jsx-scope": "off",
+      "react/no-unescaped-entities": "off",
       "react-hooks/exhaustive-deps": "warn",
       "import/no-unresolved": "off",
       "no-undef": "off",

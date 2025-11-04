@@ -19,6 +19,8 @@
     "incremental": true,
     "noImplicitAny": false,
     "strictNullChecks": false,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": false,
     "plugins": [
       {
         "name": "next"
