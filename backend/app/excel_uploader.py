@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, date
 from pathlib import Path
 from typing import Any, Dict, Optional
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pandas as pd
 from sqlalchemy import select
