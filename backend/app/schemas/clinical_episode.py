@@ -93,3 +93,26 @@ class PaginatedClinicalEpisodes(BaseModel):
     total_pages: int
     
     model_config = ConfigDict(from_attributes=True)
+
+
+class ReferralCreate(BaseModel):
+    """Schema for creating a referral"""
+    patient_id: UUID
+    service: str
+    diagnosis: str
+    expected_days: int
+    social_factors: Optional[str] = None
+    clinical_notes: Optional[str] = None
+    submitted_by: str
+    admission_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+
+
+class ReferralResponse(ClinicalEpisodeBase):
+    """Schema for referral response"""
+    id: UUID
+    patient_id: UUID
+    patient: Optional[Patient] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    model_config = ConfigDict(from_attributes=True)

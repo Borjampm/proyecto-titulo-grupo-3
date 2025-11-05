@@ -304,6 +304,7 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
 
   return {
     id: episode.id,
+    patientId: episode.patient_id,
     name: `${patient.first_name || ''} ${patient.last_name || ''}`.trim() || 'Sin nombre',
     age: age,
     rut: patient.rut || '',
@@ -327,7 +328,7 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
     caseStatus: caseStatus,
     createdAt: episode.created_at,
     updatedAt: episode.updated_at,
-  };
+  } as any;
 }
 
 /**
@@ -586,9 +587,16 @@ export async function getPatient(id: string): Promise<Patient> {
  * POST /patients/
  * Crea un nuevo paciente
  */
-export async function createPatient(patient: Omit<Patient, 'id'>): Promise<Patient> {
-  // TODO: Implementar cuando el backend soporte crear episodios completos
-  throw new Error('Crear paciente no está disponible aún');
+export async function createPatient(patientData: {
+  medical_identifier: string;
+  first_name: string;
+  last_name: string;
+  rut: string;
+  birth_date: string;
+  gender: string;
+}): Promise<any> {
+  const endpoint = '/patients/';
+  return await apiClient.post<any>(endpoint, patientData);
 }
 
 /**
@@ -858,12 +866,25 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 // =============================================================================
 
 /**
- * POST /referrals
+ * POST /clinical-episodes/referrals
  * Crea una nueva derivación desde servicios clínicos
  */
 export async function createReferral(referral: ReferralForm): Promise<Patient> {
-  // TODO: Implementar cuando el backend soporte derivaciones
-  throw new Error('Crear derivaciones no está disponible aún');
+  const referralCreate = {
+    patient_id: referral.patientId,
+    service: referral.service,
+    diagnosis: referral.diagnosis,
+    expected_days: referral.expectedDays,
+    social_factors: referral.socialFactors || null,
+    clinical_notes: referral.clinicalNotes || null,
+    submitted_by: referral.submittedBy,
+    admission_at: referral.admissionDate || new Date().toISOString(),
+  };
+
+  const endpoint = '/clinical-episodes/referrals';
+  const response = await apiClient.post<any>(endpoint, referralCreate);
+
+  return transformClinicalEpisodeToPatient(response);
 }
 
 // =============================================================================

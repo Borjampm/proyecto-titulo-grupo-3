@@ -38,15 +38,21 @@ export interface Alert {
 }
 
 export interface ReferralForm {
-  patientName: string;
-  age: number;
+  patientId: string;
   service: string;
   diagnosis: string;
-  admissionDate: string;
   expectedDays: number;
-  socialFactors: string;
-  clinicalNotes: string;
+  socialFactors?: string;
+  clinicalNotes?: string;
   submittedBy: string;
+  admissionDate?: string;
+}
+
+export interface PatientOption {
+  id: string;
+  name: string;
+  rut?: string;
+  age: number;
 }
 
 export interface DashboardStats {
