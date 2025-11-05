@@ -202,6 +202,40 @@ async def list_clinical_episodes(
     )
 
 
+@router.post("/referrals", response_model=ReferralResponse)
+async def create_referral(
+    referral: ReferralCreate,
+    session: AsyncSession = Depends(get_session)
+) -> ReferralResponse:
+    """
+    Create a new referral from clinical services to stay management.
+    
+    This endpoint creates a new clinical episode for an existing patient.
+    """
+    patient_result = await session.execute(
+        select(Patient).where(Patient.id == referral.patient_id)
+    )
+    patient = patient_result.scalar_one_or_none()
+    
+    if not patient:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    
+    episode = ClinicalEpisodeModel(
+        patient_id=referral.patient_id,
+        admission_at=referral.admission_at,
+        status=EpisodeStatus.ACTIVE
+    )
+    
+    session.add(episode)
+    await session.flush()
+    await session.refresh(episode, ['patient'])
+    
+    # TODO: Create alert for management team when alerts are implemented :$
+    
+    return episode
+
+
+# IMPORTANTE: Esto siempre tiene que ir al final de los endpoints porque si no una ruta se puede mappear a una ID de episodio.
 @router.get("/{episode_id}", response_model=Union[ClinicalEpisodeWithPatient, ClinicalEpisode])
 async def get_clinical_episode(
     episode_id: UUID,
@@ -359,36 +393,3 @@ async def get_episode_history(
         episode_id=episode_id,
         events=events
     )
-
-
-@router.post("/referrals", response_model=ReferralResponse)
-async def create_referral(
-    referral: ReferralCreate,
-    session: AsyncSession = Depends(get_session)
-) -> ReferralResponse:
-    """
-    Create a new referral from clinical services to stay management.
-    
-    This endpoint creates a new clinical episode for an existing patient.
-    """
-    patient_result = await session.execute(
-        select(Patient).where(Patient.id == referral.patient_id)
-    )
-    patient = patient_result.scalar_one_or_none()
-    
-    if not patient:
-        raise HTTPException(status_code=404, detail="Patient not found")
-    
-    episode = ClinicalEpisodeModel(
-        patient_id=referral.patient_id,
-        admission_at=referral.admission_at,
-        status=EpisodeStatus.ACTIVE
-    )
-    
-    session.add(episode)
-    await session.flush()
-    await session.refresh(episode, ['patient'])
-    
-    # TODO: Create alert for management team when alerts are implemented :$
-    
-    return episode
