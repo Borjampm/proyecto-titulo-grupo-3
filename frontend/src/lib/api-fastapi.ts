@@ -456,7 +456,7 @@ export async function getCurrentUser(): Promise<User> {
  * GET /clinical-episodes/
  * Obtiene la lista de episodios clínicos (pacientes) con filtros
  */
-export async function getPatients(filters?: PatientFilters): Promise<PaginatedResponse<Patient>> {
+export async function getClinicalEpisodes(filters?: PatientFilters): Promise<PaginatedResponse<Patient>> {
   if (config.USE_MOCK_DATA) {
     let filteredPatients = [...mockPatients];
 
@@ -568,7 +568,7 @@ export async function getPatients(filters?: PatientFilters): Promise<PaginatedRe
  * GET /clinical-episodes/{episode_id}
  * Obtiene un episodio clínico (paciente) por su ID
  */
-export async function getPatient(id: string): Promise<Patient> {
+export async function getClinicalEpisode(id: string): Promise<Patient> {
   if (config.USE_MOCK_DATA) {
     const patient = mockPatients.find((p) => p.id === id);
     if (!patient) {
@@ -581,6 +581,15 @@ export async function getPatient(id: string): Promise<Patient> {
   const episode = await apiClient.get<any>(endpoint);
 
   return transformClinicalEpisodeToPatient(episode);
+}
+
+/**
+ * GET /patients/
+ * Obtiene todos los pacientes del sistema
+ */
+export async function getAllPatients(): Promise<any[]> {
+  const endpoint = '/patients/';
+  return await apiClient.get<any[]>(endpoint);
 }
 
 /**
@@ -603,7 +612,7 @@ export async function createPatient(patientData: {
  * PUT /clinical-episodes/{episode_id}
  * Actualiza un episodio clínico
  */
-export async function updatePatient(id: string, updates: Partial<Patient>): Promise<Patient> {
+export async function updateClinicalEpisode(id: string, updates: Partial<Patient>): Promise<Patient> {
   // TODO: Implementar cuando el backend soporte actualizar episodios
   throw new Error('Actualizar paciente no está disponible aún');
 }
@@ -612,7 +621,7 @@ export async function updatePatient(id: string, updates: Partial<Patient>): Prom
  * DELETE /clinical-episodes/{episode_id}
  * Elimina un episodio clínico
  */
-export async function deletePatient(id: string): Promise<void> {
+export async function deleteClinicalEpisode(id: string): Promise<void> {
   // TODO: Implementar cuando el backend soporte eliminar episodios
   throw new Error('Eliminar paciente no está disponible aún');
 }
@@ -836,7 +845,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   }
 
   // Obtener todos los episodios para calcular estadísticas
-  const response = await getPatients({ page: 1, pageSize: 100 });
+  const response = await getClinicalEpisodes({ page: 1, pageSize: 100 });
   const patients = response.data;
 
   const totalPatients = patients.length;

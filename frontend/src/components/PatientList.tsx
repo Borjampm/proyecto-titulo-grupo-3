@@ -8,7 +8,7 @@ import { RiskBadge } from './RiskBadge';
 import { Badge } from './ui/badge';
 import { Search, Filter } from 'lucide-react';
 import { Button } from './ui/button';
-import { getPatients, getClinicalServices } from '../lib/api-fastapi';
+import { getClinicalEpisodes, getClinicalServices } from '../lib/api-fastapi';
 
 interface PatientListProps {
   onSelectPatient: (patient: Patient) => void;
@@ -50,7 +50,7 @@ export function PatientList({ onSelectPatient }: PatientListProps) {
       if (filterRisk !== 'all') filters.riskLevel = filterRisk as any;
       if (filterCaseStatus !== 'all') filters.caseStatus = filterCaseStatus as any;
       
-      const response = await getPatients(filters);
+      const response = await getClinicalEpisodes(filters);
       setPatients(response.data);
     } catch (error) {
       console.error('Error loading patients:', error);

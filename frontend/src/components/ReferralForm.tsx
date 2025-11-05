@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Send, CheckCircle, UserPlus, Search } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { CreatePatientDialog } from './CreatePatientDialog';
-import { getPatients, createReferral } from '../lib/api-fastapi';
+import { getAllPatients, createReferral } from '../lib/api-fastapi';
 import { PatientOption } from '../types';
 
 const services = [
@@ -27,7 +27,7 @@ export function ReferralForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [patientDialogOpen, setPatientDialogOpen] = useState(false);
-  const [patients, setPatients] = useState<PatientOption[]>([]);
+  const [allPatients, setAllPatients] = useState<PatientOption[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<PatientOption | null>(null);
   const [showPatientDropdown, setShowPatientDropdown] = useState(false);
@@ -42,25 +42,48 @@ export function ReferralForm() {
   });
 
   useEffect(() => {
-    if (searchTerm.length >= 2) {
-      loadPatients();
+    loadPatients();
+  }, []);
+
+  const calculateAge = (birthDate: string): number => {
+    const birth = new Date(birthDate);
+    const today = new Date();
+    let age = today.getFullYear() - birth.getFullYear();
+    const monthDiff = today.getMonth() - birth.getMonth();
+    
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+      age--;
     }
-  }, [searchTerm]);
+    
+    return age;
+  };
 
   const loadPatients = async () => {
     try {
-      const response = await getPatients({ search: searchTerm, pageSize: 10 });
-      const patientOptions: PatientOption[] = response.data.map(p => ({
-        id: (p as any).patientId || p.id,
-        name: p.name,
+      const response = await getAllPatients();
+      const patientOptions: PatientOption[] = response.map((p: any) => ({
+        id: p.id,
+        name: `${p.first_name} ${p.last_name}`,
         rut: p.rut,
-        age: p.age,
+        age: calculateAge(p.birth_date),
       }));
-      setPatients(patientOptions);
+      setAllPatients(patientOptions);
     } catch (err) {
       console.error('Error loading patients:', err);
     }
   };
+
+  const filteredPatients = useMemo(() => {
+    if (searchTerm.length < 2) {
+      return [];
+    }
+    
+    const search = searchTerm.toLowerCase();
+    return allPatients.filter(p => 
+      p.name.toLowerCase().includes(search) ||
+      p.rut?.toLowerCase().includes(search)
+    );
+  }, [searchTerm, allPatients]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,7 +133,7 @@ export function ReferralForm() {
 
   const handlePatientCreated = (patient: PatientOption) => {
     setSelectedPatient(patient);
-    setPatients(prev => [patient, ...prev]);
+    setAllPatients(prev => [patient, ...prev]);
   };
 
   const handlePatientSearch = (value: string) => {
@@ -200,9 +223,9 @@ export function ReferralForm() {
                       placeholder="Buscar por nombre o RUT..."
                       className="pl-9"
                     />
-                    {showPatientDropdown && patients.length > 0 && (
+                    {showPatientDropdown && filteredPatients.length > 0 && (
                       <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
-                        {patients.map((patient) => (
+                        {filteredPatients.map((patient) => (
                           <button
                             key={patient.id}
                             type="button"

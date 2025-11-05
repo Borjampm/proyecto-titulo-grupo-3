@@ -1,5 +1,6 @@
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware  # <-- 1. IMPORT THIS
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 
 from app.deps import lifespan
 from app.routers.patients import router as patients_router
@@ -24,9 +25,32 @@ app.add_middleware(
     allow_headers=["*"],       # Allows all headers
 )
 
-@app.get("/")
-async def read_root() -> dict[str, str]:
-    return {"message": "Hello, world!"}
+@app.get("/", response_class=PlainTextResponse)
+async def read_root() -> str:
+    return """
+The lion does not concern himself with approval before merging to main.
+            
+            **********  ******
+        **************************
+      ******************************
+    ****    ****            ****    **
+    ****  ****                ****  **
+  **********                    ********
+  **********  ****        ****  ********
+************      **    **      ********
+************      **    **      ********
+************      **    **    **********
+**************    ********    **********
+  ************        **      ********
+    ************    ******  **********
+    ****************      ************
+      **************      **********
+        **************************
+            ********************
+                **************
+                  **********
+                      ****
+"""
 
 
 app.include_router(patients_router)

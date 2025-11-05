@@ -3,7 +3,7 @@ import { Card } from './ui/card';
 import { Users, AlertTriangle, TrendingUp, Clock, Activity } from 'lucide-react';
 import { RiskBadge } from './RiskBadge';
 import { Alert, AlertDescription } from './ui/alert';
-import { getDashboardStats, getAllAlerts, getPatients } from '../lib/api-fastapi';
+import { getDashboardStats, getAllAlerts, getClinicalEpisodes } from '../lib/api-fastapi';
 import { DashboardStats, Alert as AlertType, Patient } from '../types';
 
 export function Dashboard() {
@@ -23,8 +23,8 @@ export function Dashboard() {
       const [statsData, alertsData, urgentPatientsData, allPatientsData] = await Promise.all([
         getDashboardStats(),
         getAllAlerts(),
-        getPatients({ riskLevel: 'high', pageSize: 5 }),
-        getPatients({ pageSize: 100 }),
+        getClinicalEpisodes({ riskLevel: 'high', pageSize: 5 }),
+        getClinicalEpisodes({ pageSize: 100 }),
       ]);
       
       setStats(statsData);
