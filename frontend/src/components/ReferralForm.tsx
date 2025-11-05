@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from './ui/card';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
 import { Button } from './ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { Send, CheckCircle } from 'lucide-react';
+import { Send, CheckCircle, UserPlus, Search } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
+import { CreatePatientDialog } from './CreatePatientDialog';
+import { getPatients, createReferral } from '../lib/api-fastapi';
+import { PatientOption } from '../types';
 
 const services = [
   'Medicina Interna',
@@ -21,41 +24,104 @@ const services = [
 
 export function ReferralForm() {
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [patientDialogOpen, setPatientDialogOpen] = useState(false);
+  const [patients, setPatients] = useState<PatientOption[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedPatient, setSelectedPatient] = useState<PatientOption | null>(null);
+  const [showPatientDropdown, setShowPatientDropdown] = useState(false);
+  
   const [formData, setFormData] = useState({
-    patientName: '',
-    age: '',
     service: '',
     diagnosis: '',
-    admissionDate: '',
     expectedDays: '',
     socialFactors: '',
     clinicalNotes: '',
     submittedBy: ''
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (searchTerm.length >= 2) {
+      loadPatients();
+    }
+  }, [searchTerm]);
+
+  const loadPatients = async () => {
+    try {
+      const response = await getPatients({ search: searchTerm, pageSize: 10 });
+      const patientOptions: PatientOption[] = response.data.map(p => ({
+        id: (p as any).patientId || p.id,
+        name: p.name,
+        rut: p.rut,
+        age: p.age,
+      }));
+      setPatients(patientOptions);
+    } catch (err) {
+      console.error('Error loading patients:', err);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // In a real app, this would send to backend
-    console.log('Form submitted:', formData);
-    setSubmitted(true);
-    setTimeout(() => {
-      setSubmitted(false);
-      setFormData({
-        patientName: '',
-        age: '',
-        service: '',
-        diagnosis: '',
-        admissionDate: '',
-        expectedDays: '',
-        socialFactors: '',
-        clinicalNotes: '',
-        submittedBy: ''
+    
+    if (!selectedPatient) {
+      setError('Debe seleccionar un paciente');
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      await createReferral({
+        patientId: selectedPatient.id,
+        service: formData.service,
+        diagnosis: formData.diagnosis,
+        expectedDays: parseInt(formData.expectedDays),
+        socialFactors: formData.socialFactors,
+        clinicalNotes: formData.clinicalNotes,
+        submittedBy: formData.submittedBy,
       });
-    }, 3000);
+
+      setSubmitted(true);
+      setTimeout(() => {
+        setSubmitted(false);
+        setSelectedPatient(null);
+        setFormData({
+          service: '',
+          diagnosis: '',
+          expectedDays: '',
+          socialFactors: '',
+          clinicalNotes: '',
+          submittedBy: ''
+        });
+      }, 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Error al crear la derivación');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
+  };
+
+  const handlePatientCreated = (patient: PatientOption) => {
+    setSelectedPatient(patient);
+    setPatients(prev => [patient, ...prev]);
+  };
+
+  const handlePatientSearch = (value: string) => {
+    setSearchTerm(value);
+    setShowPatientDropdown(true);
+  };
+
+  const handlePatientSelect = (patient: PatientOption) => {
+    setSelectedPatient(patient);
+    setShowPatientDropdown(false);
+    setSearchTerm('');
   };
 
   if (submitted) {
@@ -96,32 +162,80 @@ export function ReferralForm() {
       <form onSubmit={handleSubmit}>
         <Card className="p-6">
           <div className="space-y-6">
-            <h3>Información del Paciente</h3>
+            <div>
+              <h3>Selección de Paciente</h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Busque un paciente existente o cree uno nuevo
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="patient">Paciente *</Label>
+              {selectedPatient ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 p-3 border rounded-md bg-muted">
+                    <p className="font-medium">{selectedPatient.name}</p>
+                    {selectedPatient.rut && (
+                      <p className="text-sm text-muted-foreground">RUT: {selectedPatient.rut}</p>
+                    )}
+                    <p className="text-sm text-muted-foreground">Edad: {selectedPatient.age} años</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setSelectedPatient(null)}
+                  >
+                    Cambiar
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      id="patient"
+                      value={searchTerm}
+                      onChange={(e) => handlePatientSearch(e.target.value)}
+                      onFocus={() => setShowPatientDropdown(true)}
+                      placeholder="Buscar por nombre o RUT..."
+                      className="pl-9"
+                    />
+                    {showPatientDropdown && patients.length > 0 && (
+                      <div className="absolute z-10 w-full mt-1 bg-white border rounded-md shadow-lg max-h-60 overflow-auto">
+                        {patients.map((patient) => (
+                          <button
+                            key={patient.id}
+                            type="button"
+                            className="w-full text-left px-4 py-2 hover:bg-muted"
+                            onClick={() => handlePatientSelect(patient)}
+                          >
+                            <p className="font-medium">{patient.name}</p>
+                            {patient.rut && (
+                              <p className="text-sm text-muted-foreground">RUT: {patient.rut}</p>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setPatientDialogOpen(true)}
+                    className="w-full"
+                  >
+                    <UserPlus className="w-4 h-4 mr-2" />
+                    Crear Nuevo Paciente
+                  </Button>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t pt-6">
+              <h3>Información de la Derivación</h3>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="patientName">Nombre Completo del Paciente *</Label>
-                <Input
-                  id="patientName"
-                  value={formData.patientName}
-                  onChange={(e) => handleChange('patientName', e.target.value)}
-                  required
-                  placeholder="Ej: María González"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="age">Edad *</Label>
-                <Input
-                  id="age"
-                  type="number"
-                  value={formData.age}
-                  onChange={(e) => handleChange('age', e.target.value)}
-                  required
-                  placeholder="Ej: 68"
-                />
-              </div>
-
               <div className="space-y-2">
                 <Label htmlFor="service">Servicio Derivante *</Label>
                 <Select value={formData.service} onValueChange={(value) => handleChange('service', value)} required>
@@ -137,13 +251,15 @@ export function ReferralForm() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="admissionDate">Fecha de Ingreso *</Label>
+                <Label htmlFor="expectedDays">Días Esperados de Estadía *</Label>
                 <Input
-                  id="admissionDate"
-                  type="date"
-                  value={formData.admissionDate}
-                  onChange={(e) => handleChange('admissionDate', e.target.value)}
+                  id="expectedDays"
+                  type="number"
+                  value={formData.expectedDays}
+                  onChange={(e) => handleChange('expectedDays', e.target.value)}
                   required
+                  placeholder="Ej: 5"
+                  min="1"
                 />
               </div>
             </div>
@@ -156,17 +272,6 @@ export function ReferralForm() {
                 onChange={(e) => handleChange('diagnosis', e.target.value)}
                 required
                 placeholder="Ej: Neumonía comunitaria"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="expectedDays">Días Esperados de Estadía (según GRD/protocolo)</Label>
-              <Input
-                id="expectedDays"
-                type="number"
-                value={formData.expectedDays}
-                onChange={(e) => handleChange('expectedDays', e.target.value)}
-                placeholder="Ej: 5"
               />
             </div>
 
@@ -190,7 +295,7 @@ export function ReferralForm() {
                 rows={4}
                 placeholder="Situación familiar, red de apoyo, condiciones de vivienda, dificultades para alta..."
               />
-              <p className="text-muted-foreground">
+              <p className="text-sm text-muted-foreground">
                 Indique si el paciente vive solo, tiene dificultades de movilidad, falta de red de apoyo, etc.
               </p>
             </div>
@@ -206,28 +311,45 @@ export function ReferralForm() {
               />
             </div>
 
+            {error && (
+              <Alert variant="destructive">
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+
             <div className="flex justify-end gap-3 pt-4">
-              <Button type="button" variant="outline" onClick={() => setFormData({
-                patientName: '',
-                age: '',
-                service: '',
-                diagnosis: '',
-                admissionDate: '',
-                expectedDays: '',
-                socialFactors: '',
-                clinicalNotes: '',
-                submittedBy: ''
-              })}>
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={() => {
+                  setSelectedPatient(null);
+                  setFormData({
+                    service: '',
+                    diagnosis: '',
+                    expectedDays: '',
+                    socialFactors: '',
+                    clinicalNotes: '',
+                    submittedBy: ''
+                  });
+                }}
+                disabled={loading}
+              >
                 Limpiar Formulario
               </Button>
-              <Button type="submit">
+              <Button type="submit" disabled={loading || !selectedPatient}>
                 <Send className="w-4 h-4 mr-2" />
-                Enviar Derivación
+                {loading ? 'Enviando...' : 'Enviar Derivación'}
               </Button>
             </div>
           </div>
         </Card>
       </form>
+
+      <CreatePatientDialog
+        open={patientDialogOpen}
+        onOpenChange={setPatientDialogOpen}
+        onPatientCreated={handlePatientCreated}
+      />
     </div>
   );
 }

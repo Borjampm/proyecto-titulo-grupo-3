@@ -60,7 +60,7 @@ export function Dashboard() {
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-muted-foreground">Total Pacientes</p>
+              <p className="text-muted-foreground">Total Casos</p>
               <p className="mt-1">{stats.totalPatients}</p>
             </div>
             <Users className="w-8 h-8 text-blue-600" />
