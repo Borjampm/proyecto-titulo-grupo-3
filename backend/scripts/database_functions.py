@@ -42,6 +42,7 @@ from app.models.episode_document import EpisodeDocument, EpisodeDocumentType
 from app.models.clinical_episode_information import ClinicalEpisodeInformation, EpisodeInfoType
 from app.models.task_instance import TaskInstance, TaskStatus
 from app.models.task_status_history import TaskStatusHistory
+from app.models.social_score_history import SocialScoreHistory
 
 
 # Sample data - Enhanced for comprehensive search testing
@@ -832,6 +833,71 @@ async def seed_tasks(session: AsyncSession, episodes: List[ClinicalEpisode]) -> 
     return tasks
 
 
+async def seed_social_scores(session: AsyncSession, episodes: List[ClinicalEpisode]) -> List[SocialScoreHistory]:
+    """Create sample social score history for clinical episodes."""
+    scores = []
+    
+    # Define which episodes get multiple scores (indices 0, 2, 4, 6, 8 will have multiple scores)
+    multi_score_indices = {0, 2, 4, 6, 8}
+    
+    print("\nCreating social score history...")
+    
+    for idx, episode in enumerate(episodes):
+        # Base score between 1 and 15
+        base_score = random.randint(1, 15)
+        
+        # First score - recorded at admission
+        first_score = SocialScoreHistory(
+            episode_id=episode.id,
+            score=base_score,
+            recorded_at=episode.admission_at + timedelta(hours=random.randint(1, 4)),
+            recorded_by="Social Worker",
+            notes="Initial social assessment"
+        )
+        session.add(first_score)
+        scores.append(first_score)
+        
+        # Some episodes get additional scores at different dates
+        if idx in multi_score_indices:
+            # Second score - a few days later
+            second_score_value = max(1, min(15, base_score + random.randint(-3, 3)))
+            second_score = SocialScoreHistory(
+                episode_id=episode.id,
+                score=second_score_value,
+                recorded_at=episode.admission_at + timedelta(days=random.randint(3, 7)),
+                recorded_by="Social Worker",
+                notes="Follow-up assessment"
+            )
+            session.add(second_score)
+            scores.append(second_score)
+            
+            # Some get a third score
+            if idx in {0, 4, 8}:
+                third_score_value = max(1, min(15, second_score_value + random.randint(-2, 2)))
+                third_score = SocialScoreHistory(
+                    episode_id=episode.id,
+                    score=third_score_value,
+                    recorded_at=episode.admission_at + timedelta(days=random.randint(10, 14)),
+                    recorded_by="Case Manager",
+                    notes="Pre-discharge evaluation"
+                )
+                session.add(third_score)
+                scores.append(third_score)
+    
+    await session.commit()
+    
+    # Count episodes with multiple scores
+    episode_score_counts = {}
+    for score in scores:
+        episode_score_counts[score.episode_id] = episode_score_counts.get(score.episode_id, 0) + 1
+    
+    multi_score_episodes = sum(1 for count in episode_score_counts.values() if count > 1)
+    print(f"Created {len(scores)} social score records for {len(episodes)} episodes")
+    print(f"  Episodes with multiple scores: {multi_score_episodes}")
+    
+    return scores
+
+
 async def main(reset: bool = False):
     """Main seeding function."""
     # Create engine
@@ -869,11 +935,15 @@ async def main(reset: bool = False):
             # Seed tasks with status history
             tasks = await seed_tasks(session, episodes)
 
+            # Seed social score history
+            social_scores = await seed_social_scores(session, episodes)
+
             print(f"\nSeeding complete!")
             print(f"Created {len(patients)} patients")
             print(f"Created {len(beds)} beds")
             print(f"Created {len(episodes)} clinical episodes")
             print(f"Created {len(tasks)} tasks with status history")
+            print(f"Created {len(social_scores)} social score history records")
 
     except Exception as e:
         print(f"Error during seeding: {e}")
