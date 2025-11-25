@@ -6,7 +6,11 @@ import { Alert, AlertDescription } from './ui/alert';
 import { getDashboardStats, getAllAlerts, getClinicalEpisodes } from '../lib/api-fastapi';
 import { DashboardStats, Alert as AlertType, Patient } from '../types';
 
-export function Dashboard() {
+interface DashboardProps {
+  onNavigateToPatients?: (filters: { sortBy: string; socialScoreRange: [number, number] }) => void;
+}
+
+export function Dashboard({ onNavigateToPatients }: DashboardProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentAlerts, setRecentAlerts] = useState<AlertType[]>([]);
   const [urgentPatients, setUrgentPatients] = useState<Patient[]>([]);
@@ -112,7 +116,10 @@ export function Dashboard() {
       <div>
         <h3 className="text-lg font-medium mb-4">Indicadores de Riesgo Social</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="p-4">
+          <Card 
+            className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [11, 20] })}
+          >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-muted-foreground">Riesgo Social Alto</p>
@@ -122,7 +129,10 @@ export function Dashboard() {
             </div>
           </Card>
 
-          <Card className="p-4">
+          <Card 
+            className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [5, 10] })}
+          >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-muted-foreground">Riesgo Social Medio</p>
@@ -132,7 +142,10 @@ export function Dashboard() {
             </div>
           </Card>
 
-          <Card className="p-4">
+          <Card 
+            className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [0, 4] })}
+          >
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-muted-foreground">Riesgo Social Bajo</p>

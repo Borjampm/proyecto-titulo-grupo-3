@@ -14,16 +14,22 @@ import { getClinicalEpisodes, getClinicalServices } from '../lib/api-fastapi';
 
 interface PatientListProps {
   onSelectPatient: (patient: Patient) => void;
+  initialSortBy?: string;
+  initialSocialScoreRange?: [number, number];
 }
 
-export function PatientList({ onSelectPatient }: PatientListProps) {
+export function PatientList({ 
+  onSelectPatient,
+  initialSortBy = 'none',
+  initialSocialScoreRange = [0, 20]
+}: PatientListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterService, setFilterService] = useState<string>('all');
   const [filterRisk, setFilterRisk] = useState<string>('all');
   const [filterCaseStatus, setFilterCaseStatus] = useState<string>('all');
-  const [sortBy, setSortBy] = useState<string>('none');
+  const [sortBy, setSortBy] = useState<string>(initialSortBy);
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [socialScoreRange, setSocialScoreRange] = useState<[number, number]>([0, 20]);
+  const [socialScoreRange, setSocialScoreRange] = useState<[number, number]>(initialSocialScoreRange);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [services, setServices] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
