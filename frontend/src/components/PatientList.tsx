@@ -19,6 +19,7 @@ export function PatientList({ onSelectPatient }: PatientListProps) {
   const [filterService, setFilterService] = useState<string>('all');
   const [filterRisk, setFilterRisk] = useState<string>('all');
   const [filterCaseStatus, setFilterCaseStatus] = useState<string>('all');
+  const [sortBy, setSortBy] = useState<string>('none');
   const [patients, setPatients] = useState<Patient[]>([]);
   const [services, setServices] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,7 +60,18 @@ export function PatientList({ onSelectPatient }: PatientListProps) {
     }
   };
 
-  const filteredPatients = patients;
+  // Apply sorting
+  const sortedPatients = [...patients].sort((a, b) => {
+    if (sortBy === 'social-score') {
+      // Sort by social score descending (highest first), nulls last
+      const scoreA = a.socialScore ?? -1;
+      const scoreB = b.socialScore ?? -1;
+      return scoreB - scoreA;
+    }
+    return 0; // No sorting
+  });
+
+  const filteredPatients = sortedPatients;
 
   return (
     <div className="space-y-6">
@@ -72,7 +84,7 @@ export function PatientList({ onSelectPatient }: PatientListProps) {
 
       {/* Filters */}
       <Card className="p-4">
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
           <div className="md:col-span-2">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -117,6 +129,16 @@ export function PatientList({ onSelectPatient }: PatientListProps) {
               <SelectItem value="high">Alto Riesgo</SelectItem>
               <SelectItem value="medium">Riesgo Medio</SelectItem>
               <SelectItem value="low">Bajo Riesgo</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger>
+              <SelectValue placeholder="Ordenar por" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Sin ordenar</SelectItem>
+              <SelectItem value="social-score">Puntaje Social</SelectItem>
             </SelectContent>
           </Select>
         </div>
