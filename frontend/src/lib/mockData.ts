@@ -159,6 +159,9 @@ export const mockDashboardStats: DashboardStats = {
   highRisk: 2,
   mediumRisk: 2,
   lowRisk: 2,
+  highSocialRisk: 2,
+  mediumSocialRisk: 2,
+  lowSocialRisk: 2,
   averageStayDays: 5.5,
   deviations: 2
 };

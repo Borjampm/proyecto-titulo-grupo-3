@@ -864,11 +864,19 @@ export async function getDashboardStats(): Promise<DashboardStats> {
   // Calcular desviaciones (pacientes con días de estadía mayor a los esperados)
   const deviations = patients.filter(p => p.daysInStay > p.expectedDays).length;
 
+  // Calcular estadísticas de riesgo social
+  const highSocialRisk = patients.filter(p => (p.socialScore ?? -1) > 10).length;
+  const mediumSocialRisk = patients.filter(p => (p.socialScore ?? -1) >= 6 && (p.socialScore ?? -1) <= 10).length;
+  const lowSocialRisk = patients.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore <= 5).length;
+
   return {
     totalPatients,
     highRisk: highRiskPatients,
     mediumRisk: mediumRiskPatients,
     lowRisk: lowRiskPatients,
+    highSocialRisk,
+    mediumSocialRisk,
+    lowSocialRisk,
     averageStayDays,
     deviations,
   };

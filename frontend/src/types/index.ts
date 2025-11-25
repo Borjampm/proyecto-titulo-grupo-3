@@ -61,6 +61,9 @@ export interface DashboardStats {
   highRisk: number;
   mediumRisk: number;
   lowRisk: number;
+  highSocialRisk: number;
+  mediumSocialRisk: number;
+  lowSocialRisk: number;
   averageStayDays: number;
   deviations: number;
 }
