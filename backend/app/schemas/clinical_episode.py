@@ -48,11 +48,24 @@ class ClinicalEpisode(ClinicalEpisodeBase):
 
 # In schemas/clinical_episode.py
 from app.schemas.patient import Patient  # Import the Patient schema
+from app.schemas.social_score_history import SocialScoreHistory
 
 class ClinicalEpisodeWithPatient(ClinicalEpisodeBase):
     id: UUID
     patient_id: UUID
     patient: Optional[Patient] = None  # Add this to include the full patient data
+    created_at: datetime
+    updated_at: datetime
+    
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ClinicalEpisodeWithIncludes(ClinicalEpisodeBase):
+    """Schema for clinical episode with optional includes (patient, social_score)"""
+    id: UUID
+    patient_id: UUID
+    patient: Optional[Patient] = None
+    latest_social_score: Optional[SocialScoreHistory] = None
     created_at: datetime
     updated_at: datetime
     
@@ -66,6 +79,7 @@ class HistoryEventType(str, Enum):
     DOCUMENT_UPLOADED = "document_uploaded"
     TASK_CREATED = "task_created"
     TASK_UPDATED = "task_updated"
+    SOCIAL_SCORE_RECORDED = "social_score_recorded"
 
 
 class HistoryEvent(BaseModel):
@@ -86,7 +100,7 @@ class EpisodeHistory(BaseModel):
 
 class PaginatedClinicalEpisodes(BaseModel):
     """Schema for paginated clinical episodes response"""
-    data: list[ClinicalEpisode | ClinicalEpisodeWithPatient]
+    data: list[ClinicalEpisode | ClinicalEpisodeWithPatient | ClinicalEpisodeWithIncludes]
     total: int
     page: int
     page_size: int

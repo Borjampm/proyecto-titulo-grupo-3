@@ -57,3 +57,9 @@ from .task_status_history import (
     TaskStatusHistoryCreate,
     TaskStatusHistory,
 )
+from .social_score_history import (
+    SocialScoreHistoryBase,
+    SocialScoreHistoryCreate,
+    SocialScoreHistoryUpdate,
+    SocialScoreHistory,
+)

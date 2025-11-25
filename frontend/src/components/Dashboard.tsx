@@ -6,7 +6,11 @@ import { Alert, AlertDescription } from './ui/alert';
 import { getDashboardStats, getAllAlerts, getClinicalEpisodes } from '../lib/api-fastapi';
 import { DashboardStats, Alert as AlertType, Patient } from '../types';
 
-export function Dashboard() {
+interface DashboardProps {
+  onNavigateToPatients?: (filters: { sortBy: string; socialScoreRange: [number, number] }) => void;
+}
+
+export function Dashboard({ onNavigateToPatients }: DashboardProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentAlerts, setRecentAlerts] = useState<AlertType[]>([]);
   const [urgentPatients, setUrgentPatients] = useState<Patient[]>([]);
@@ -106,6 +110,51 @@ export function Dashboard() {
             <Clock className="w-8 h-8 text-purple-600" />
           </div>
         </Card>
+      </div>
+
+      {/* Social Risk Statistics */}
+      <div>
+        <h3 className="text-lg font-medium mb-4">Indicadores de Riesgo Social</h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Card 
+            className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [11, 20] })}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-muted-foreground">Riesgo Social Alto</p>
+                <p className="mt-1 text-red-600">{stats.highSocialRisk}</p>
+              </div>
+              <Users className="w-8 h-8 text-red-600" />
+            </div>
+          </Card>
+
+          <Card 
+            className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [5, 10] })}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-muted-foreground">Riesgo Social Medio</p>
+                <p className="mt-1 text-yellow-600">{stats.mediumSocialRisk}</p>
+              </div>
+              <Users className="w-8 h-8 text-yellow-600" />
+            </div>
+          </Card>
+
+          <Card 
+            className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [0, 4] })}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-muted-foreground">Riesgo Social Bajo</p>
+                <p className="mt-1 text-green-600">{stats.lowSocialRisk}</p>
+              </div>
+              <Users className="w-8 h-8 text-green-600" />
+            </div>
+          </Card>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

@@ -3,13 +3,17 @@ import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { importPatientsFromExcel } from '../lib/api-fastapi';
 import { toast } from 'sonner';
+
+type ExcelFileType = 'default' | 'score_social';
 
 export function DataUpload() {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [fileName, setFileName] = useState('');
   const [uploadResult, setUploadResult] = useState<{ imported: number; errors: string[] } | null>(null);
+  const [fileType, setFileType] = useState<ExcelFileType>('default');
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -75,6 +79,20 @@ export function DataUpload() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="p-6">
           <h3 className="mb-4">Cargar Archivo</h3>
+          
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2">Tipo de archivo</label>
+            <Select value={fileType} onValueChange={(value: ExcelFileType) => setFileType(value)}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecciona el tipo de archivo" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">Default</SelectItem>
+                <SelectItem value="score_social">Score Social</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="border-2 border-dashed rounded-lg p-8 text-center">
             <FileSpreadsheet className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground mb-4">
@@ -102,22 +120,30 @@ export function DataUpload() {
 
         <Card className="p-6">
           <h3 className="mb-4">Formato Esperado</h3>
-          <p className="text-muted-foreground mb-4">
-            El archivo debe contener las siguientes columnas:
-          </p>
-          <ul className="space-y-2 text-muted-foreground">
-            <li>• Nombre del paciente</li>
-            <li>• Edad</li>
-            <li>• Fecha de ingreso</li>
-            <li>• Servicio</li>
-            <li>• Diagnóstico</li>
-            <li>• GRD</li>
-            <li>• Días esperados de estadía</li>
-            <li>• Médico responsable</li>
-          </ul>
-          <Button variant="link" className="mt-4 p-0">
-            Descargar plantilla de ejemplo
-          </Button>
+          {fileType === 'score_social' ? (
+            <p className="text-muted-foreground">
+              El archivo debe tener una hoja Data Casos con una columna puntaje
+            </p>
+          ) : (
+            <>
+              <p className="text-muted-foreground mb-4">
+                El archivo debe contener las siguientes columnas:
+              </p>
+              <ul className="space-y-2 text-muted-foreground">
+                <li>• Nombre del paciente</li>
+                <li>• Edad</li>
+                <li>• Fecha de ingreso</li>
+                <li>• Servicio</li>
+                <li>• Diagnóstico</li>
+                <li>• GRD</li>
+                <li>• Días esperados de estadía</li>
+                <li>• Médico responsable</li>
+              </ul>
+              <Button variant="link" className="mt-4 p-0">
+                Descargar plantilla de ejemplo
+              </Button>
+            </>
+          )}
         </Card>
       </div>
 

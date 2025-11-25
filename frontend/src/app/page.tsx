@@ -30,6 +30,10 @@ function AppContent() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [patientListFilters, setPatientListFilters] = useState<{
+    sortBy?: string;
+    socialScoreRange?: [number, number];
+  }>({});
 
   // Mostrar pantalla de carga mientras se verifica la autenticación
   if (isLoading) {
@@ -56,6 +60,11 @@ function AppContent() {
     setSelectedPatient(null);
   };
 
+  const handleNavigateToPatients = (filters: { sortBy: string; socialScoreRange: [number, number] }) => {
+    setPatientListFilters(filters);
+    setCurrentView('patients');
+  };
+
   const renderContent = () => {
     if (selectedPatient) {
       return <PatientDetail patient={selectedPatient} onBack={handleBackToList} />;
@@ -63,9 +72,16 @@ function AppContent() {
 
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard />;
+        return <Dashboard onNavigateToPatients={handleNavigateToPatients} />;
       case 'patients':
-        return <PatientList onSelectPatient={handleSelectPatient} />;
+        return (
+          <PatientList 
+            onSelectPatient={handleSelectPatient} 
+            initialSortBy={patientListFilters.sortBy}
+            initialSocialScoreRange={patientListFilters.socialScoreRange}
+            key={JSON.stringify(patientListFilters)}
+          />
+        );
       case 'referral':
         return <ReferralForm />;
       case 'upload':
@@ -102,6 +118,9 @@ function AppContent() {
                     setCurrentView(item.id);
                     setSelectedPatient(null);
                     setSidebarOpen(false);
+                    if (item.id === 'patients') {
+                      setPatientListFilters({});
+                    }
                   }}
                   className={cn(
                     'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors',

@@ -20,6 +20,7 @@ export interface Patient {
   riskLevel: RiskLevel;
   socialRisk: boolean;
   financialRisk: boolean;
+  socialScore?: number | null; // Puntaje social (0-100)
   status: PatientStatus;
   caseStatus: CaseStatus;
   grg: string;
@@ -60,6 +61,9 @@ export interface DashboardStats {
   highRisk: number;
   mediumRisk: number;
   lowRisk: number;
+  highSocialRisk: number;
+  mediumSocialRisk: number;
+  lowSocialRisk: number;
   averageStayDays: number;
   deviations: number;
 }
