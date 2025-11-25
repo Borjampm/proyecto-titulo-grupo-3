@@ -7,7 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class SocialScoreHistoryBase(BaseModel):
     """Base schema for social score history"""
-    score: int = Field(..., description="The social score value")
+    score: Optional[int] = Field(None, description="The social score value (can be null if no_score_reason is provided)")
+    no_score_reason: Optional[str] = Field(None, max_length=500, description="Reason why score could not be calculated (Motivo)")
     recorded_by: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = Field(None, max_length=1000)
 
@@ -21,6 +22,7 @@ class SocialScoreHistoryCreate(SocialScoreHistoryBase):
 class SocialScoreHistoryUpdate(BaseModel):
     """Schema for updating a social score history record"""
     score: Optional[int] = None
+    no_score_reason: Optional[str] = Field(None, max_length=500)
     recorded_by: Optional[str] = Field(None, max_length=255)
     notes: Optional[str] = Field(None, max_length=1000)
 

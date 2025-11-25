@@ -217,10 +217,36 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
         </Card>
       )}
 
-      {/* Risk Factors */}
+        {/* Risk Factors */}
       <Card className="p-6">
-        <h3 className="mb-4">Factores de Riesgo</h3>
-        <div className="flex flex-wrap gap-3">
+        <h3 className="mb-4">Factores de Riesgo y Score Social</h3>
+        <div className="flex flex-wrap gap-3 mb-4">
+          {patient.socialScore !== null && patient.socialScore !== undefined ? (
+            <Badge 
+              variant="outline" 
+              className={
+                patient.socialScore > 10 
+                  ? 'bg-red-50 text-red-700 border-red-300' 
+                  : patient.socialScore >= 6 
+                    ? 'bg-yellow-50 text-yellow-700 border-yellow-300'
+                    : 'bg-green-50 text-green-700 border-green-300'
+              }
+            >
+              Score Social: {patient.socialScore}
+            </Badge>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-300">
+                Score Social: N/A
+              </Badge>
+              {patient.socialScoreReason && (
+                <p className="text-xs text-muted-foreground">
+                  Razón: {patient.socialScoreReason}
+                </p>
+              )}
+            </div>
+          )}
+          
           {patient.socialRisk && (
             <Badge className="bg-orange-100 text-orange-800 border-orange-300" variant="outline">
               Riesgo Social Detectado
@@ -236,10 +262,11 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
               Desvío de Estadía
             </Badge>
           )}
-          {!patient.socialRisk && !patient.financialRisk && patient.daysInStay <= patient.expectedDays && (
-            <p className="text-muted-foreground">No se han detectado factores de riesgo críticos</p>
-          )}
         </div>
+        
+        {!patient.socialRisk && !patient.financialRisk && patient.daysInStay <= patient.expectedDays && !patient.socialScoreReason && (
+          <p className="text-muted-foreground">No se han detectado factores de riesgo críticos</p>
+        )}
       </Card>
 
       {/* Tabs for Timeline, Tasks and Documents */}

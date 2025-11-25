@@ -26,6 +26,7 @@ from app.models.clinical_episode_information import (
     ClinicalEpisodeInformation,
     EpisodeInfoType,
 )
+from app.models.social_score_history import SocialScoreHistory
 
 # Configure logging
 logging.basicConfig(
@@ -860,6 +861,182 @@ class ExcelUploader:
         bed = result.scalar_one_or_none()
         return bed.id if bed else None
 
+    # ==================== SOCIAL SCORE DATA UPLOAD ====================
+
+    async def upload_social_scores_from_excel(self, excel_path: str | Path) -> int:
+        """
+        Upload social score data from "Data Casos" sheet in the Score Social Excel file.
+
+        This method:
+        - Reads the "Data Casos" sheet
+        - Extracts: Episodio / Estadía (to match episode), Puntaje (score), 
+          Fecha Asignación (recorded_at), Encuestadora (recorded_by), Motivo (no_score_reason)
+        - Creates SocialScoreHistory records for matching episodes
+        - Handles null scores by storing the reason from "Motivo" column
+
+        Args:
+            excel_path: Path to the "Score Social.xlsx" file
+
+        Returns:
+            Number of social scores uploaded
+        """
+        logger.info(f"Reading social score data from {excel_path}")
+
+        try:
+            df = pd.read_excel(excel_path, sheet_name="Data Casos")
+            logger.info(f"Found {len(df)} rows in Data Casos sheet")
+
+            scores_created = 0
+
+            # Build a map of episode_identifier -> episode_id for quick lookup
+            episode_map = await self._build_episode_identifier_map()
+            logger.info(f"Built episode map with {len(episode_map)} entries")
+
+            for idx, row in df.iterrows():
+                try:
+                    score_data = self._parse_social_score_row(row)
+                    if score_data:
+                        episode_identifier = score_data.pop("episode_identifier", None)
+                        if episode_identifier and episode_identifier in episode_map:
+                            episode_id = episode_map[episode_identifier]
+                            await self._create_social_score(episode_id, score_data)
+                            scores_created += 1
+                        else:
+                            logger.warning(f"Episode not found for identifier: {episode_identifier}")
+                except Exception as e:
+                    logger.error(f"Error processing social score row {idx}: {e}")
+                    continue
+
+            await self.db.commit()
+            logger.info(f"Successfully uploaded {scores_created} social scores")
+            return scores_created
+
+        except Exception as e:
+            logger.error(f"Error uploading social scores: {e}")
+            await self.db.rollback()
+            raise
+
+    async def _build_episode_identifier_map(self) -> Dict[str, UUID]:
+        """
+        Build a map of episode identifiers (from Episodio / Estadía) to episode IDs.
+        
+        The episode identifier is stored in ClinicalEpisodeInformation table with
+        title "Episodio / Estadía" and value {"episode_identifier": "..."}.
+        """
+        stmt = select(ClinicalEpisodeInformation).where(
+            ClinicalEpisodeInformation.title == "Episodio / Estadía"
+        )
+        result = await self.db.execute(stmt)
+        episode_infos = result.scalars().all()
+        
+        episode_map = {}
+        for info in episode_infos:
+            if info.value and "episode_identifier" in info.value:
+                identifier = info.value["episode_identifier"]
+                if identifier:
+                    episode_map[str(identifier)] = info.episode_id
+        
+        return episode_map
+
+    def _parse_social_score_row(self, row: pd.Series) -> Optional[Dict[str, Any]]:
+        """
+        Parse social score data from Excel row.
+        
+        Expected columns from "Score Social.xlsx":
+        - Episodio / Estadía: Episode identifier to match
+        - Puntaje: The social score (can be null)
+        - Fecha Asignación: Recorded date
+        - Encuestadora: Person who recorded the score
+        - Motivo: Reason if score is null
+        """
+        try:
+            # Get episode identifier
+            episodio_raw = row.get("Episodio / Estadía")
+            if pd.isna(episodio_raw) or str(episodio_raw).strip() == "" or str(episodio_raw).strip().lower() == "nan":
+                logger.warning("Skipping row with missing Episodio / Estadía")
+                return None
+            
+            episode_identifier = str(episodio_raw).strip()
+            
+            # Parse score (Puntaje) - can be null
+            puntaje_raw = row.get("Puntaje")
+            score = None
+            if not pd.isna(puntaje_raw):
+                try:
+                    score_value = float(puntaje_raw) if isinstance(puntaje_raw, (int, float)) else float(str(puntaje_raw))
+                    score = int(score_value)
+                except (ValueError, TypeError):
+                    score = None
+            
+            # Parse reason for no score (Motivo)
+            motivo_raw = row.get("Motivo")
+            no_score_reason = None
+            if pd.isna(puntaje_raw) or score is None:
+                if not pd.isna(motivo_raw):
+                    motivo_str = str(motivo_raw).strip()
+                    if motivo_str and motivo_str.lower() != 'nan':
+                        no_score_reason = motivo_str
+            
+            # Parse recorded date (Fecha Asignación)
+            fecha_raw = row.get("Fecha Asignación")
+            recorded_at = None
+            if not pd.isna(fecha_raw):
+                try:
+                    if isinstance(fecha_raw, pd.Timestamp):
+                        recorded_at = fecha_raw.to_pydatetime()
+                    elif isinstance(fecha_raw, str):
+                        # Try DD-MM-YYYY format first
+                        fecha_dt = pd.to_datetime(fecha_raw, format='%d-%m-%Y', errors='coerce')
+                        if pd.isna(fecha_dt):
+                            fecha_dt = pd.to_datetime(fecha_raw, errors='coerce')
+                        if not pd.isna(fecha_dt):
+                            recorded_at = fecha_dt.to_pydatetime()
+                    else:
+                        fecha_dt = pd.to_datetime(fecha_raw, errors='coerce')
+                        if not pd.isna(fecha_dt):
+                            recorded_at = fecha_dt.to_pydatetime()
+                except Exception as e:
+                    logger.warning(f"Could not parse Fecha Asignación '{fecha_raw}': {e}")
+            
+            # Parse recorded by (Encuestadora)
+            encuestadora_raw = row.get("Encuestadora")
+            recorded_by = None
+            if not pd.isna(encuestadora_raw):
+                encuestadora_str = str(encuestadora_raw).strip()
+                if encuestadora_str and encuestadora_str.lower() != 'nan':
+                    recorded_by = encuestadora_str
+            
+            # Only create record if we have score or no_score_reason
+            if score is None and no_score_reason is None:
+                logger.debug(f"Skipping row {episode_identifier}: no score and no reason")
+                return None
+            
+            return {
+                "episode_identifier": episode_identifier,
+                "score": score,
+                "no_score_reason": no_score_reason,
+                "recorded_at": recorded_at,
+                "recorded_by": recorded_by,
+            }
+            
+        except Exception as e:
+            logger.error(f"Error parsing social score row: {e}")
+            return None
+
+    async def _create_social_score(self, episode_id: UUID, score_data: Dict[str, Any]) -> SocialScoreHistory:
+        """Create a social score history record."""
+        social_score = SocialScoreHistory(
+            episode_id=episode_id,
+            score=score_data.get("score"),
+            no_score_reason=score_data.get("no_score_reason"),
+            recorded_at=score_data.get("recorded_at"),
+            recorded_by=score_data.get("recorded_by"),
+        )
+        self.db.add(social_score)
+        await self.db.flush()
+        logger.info(f"Created social score for episode {episode_id}: score={score_data.get('score')}, reason={score_data.get('no_score_reason')}")
+        return social_score
+
 
 # ==================== MAIN UPLOAD FUNCTIONS ====================
 
@@ -907,6 +1084,13 @@ async def upload_patients_only(excel_path: str | Path) -> int:
     async with SessionLocal() as session:
         uploader = ExcelUploader(session)
         return await uploader.upload_patients_from_excel(excel_path)
+
+
+async def upload_social_scores_only(excel_path: str | Path) -> int:
+    """Upload only social score data from the Score Social Excel file."""
+    async with SessionLocal() as session:
+        uploader = ExcelUploader(session)
+        return await uploader.upload_social_scores_from_excel(excel_path)
 
 
 # ==================== CLI INTERFACE ====================

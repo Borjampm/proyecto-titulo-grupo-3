@@ -497,9 +497,12 @@ async def get_episode_history(
     social_scores = social_scores_result.scalars().all()
     
     for score in social_scores:
-        description = f"Score social calculado: {score.score}"
+        if score.score is not None:
+            description = f"Score social calculado: {score.score}"
+        else:
+            description = f"Score social no disponible: {score.no_score_reason or 'Sin motivo especificado'}"
         if score.recorded_by:
-            description += f" by {score.recorded_by}"
+            description += f" por {score.recorded_by}"
         
         events.append(HistoryEvent(
             event_type=HistoryEventType.SOCIAL_SCORE_RECORDED,
@@ -508,6 +511,7 @@ async def get_episode_history(
             metadata={
                 "score_id": str(score.id),
                 "score": score.score,
+                "no_score_reason": score.no_score_reason,
                 "recorded_by": score.recorded_by,
                 "notes": score.notes
             }

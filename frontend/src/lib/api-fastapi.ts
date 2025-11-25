@@ -304,6 +304,7 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
 
   // Obtener el puntaje social más reciente si está disponible
   const socialScore = episode.latest_social_score?.score ?? null;
+  const socialScoreReason = episode.latest_social_score?.no_score_reason ?? null;
 
   return {
     id: episode.id,
@@ -328,6 +329,7 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
     socialRisk: socialScore !== null && socialScore > 10, // Alto riesgo social si score > 10
     financialRisk: false, // TODO: Implementar cuando esté disponible
     socialScore: socialScore,
+    socialScoreReason: socialScoreReason,
     status: status,
     caseStatus: caseStatus,
     createdAt: episode.created_at,
@@ -930,7 +932,7 @@ export async function getUsers(role?: string): Promise<User[]> {
 
 /**
  * POST /excel/upload-patients
- * Importa datos de pacientes desde un archivo Excel
+ * Importa datos de pacientes desde un archivo Excel (Default type)
  */
 export async function importPatientsFromExcel(file: File): Promise<ExcelImportResult> {
   const formData = new FormData();
@@ -941,6 +943,30 @@ export async function importPatientsFromExcel(file: File): Promise<ExcelImportRe
   return {
     success: response.status === 'success',
     imported: response.patients_processed || 0,
+    errors: response.errors || [],
+  };
+}
+
+/**
+ * POST /excel/upload-social-scores
+ * Importa datos de social scores desde un archivo Excel (Score Social type)
+ * 
+ * Expects a file with "Data Casos" sheet containing:
+ * - Episodio / Estadía: Episode identifier
+ * - Puntaje: The social score (can be null)
+ * - Fecha Asignación: Recorded date
+ * - Encuestadora: Person who recorded
+ * - Motivo: Reason if score is null
+ */
+export async function importSocialScoresFromExcel(file: File): Promise<ExcelImportResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await apiClient.uploadFile<any>('/excel/upload-social-scores', formData);
+
+  return {
+    success: response.status === 'success',
+    imported: response.scores_processed || 0,
     errors: response.errors || [],
   };
 }
