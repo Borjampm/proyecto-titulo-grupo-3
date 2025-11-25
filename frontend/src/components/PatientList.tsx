@@ -6,8 +6,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { RiskBadge } from './RiskBadge';
 import { Badge } from './ui/badge';
-import { Search, Filter } from 'lucide-react';
+import { Search, Filter, ChevronDown, ChevronUp } from 'lucide-react';
 import { Button } from './ui/button';
+import { Slider } from './ui/slider';
+import { Label } from './ui/label';
 import { getClinicalEpisodes, getClinicalServices } from '../lib/api-fastapi';
 
 interface PatientListProps {
@@ -20,6 +22,8 @@ export function PatientList({ onSelectPatient }: PatientListProps) {
   const [filterRisk, setFilterRisk] = useState<string>('all');
   const [filterCaseStatus, setFilterCaseStatus] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('none');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [socialScoreRange, setSocialScoreRange] = useState<[number, number]>([0, 20]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [services, setServices] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +75,15 @@ export function PatientList({ onSelectPatient }: PatientListProps) {
     return 0; // No sorting
   });
 
-  const filteredPatients = sortedPatients;
+  const filteredPatients = sortedPatients.filter(patient => {
+    // Filter by social score range if customized
+    if (socialScoreRange[0] === 0 && socialScoreRange[1] === 20) return true;
+    
+    const score = patient.socialScore;
+    if (score === null || score === undefined) return false; // Exclude patients without score when filtering
+    
+    return score >= socialScoreRange[0] && score <= socialScoreRange[1];
+  });
 
   return (
     <div className="space-y-6">
@@ -141,6 +153,41 @@ export function PatientList({ onSelectPatient }: PatientListProps) {
               <SelectItem value="social-score">Puntaje Social</SelectItem>
             </SelectContent>
           </Select>
+        </div>
+
+        <div className="mt-4 border-t pt-4">
+          <Button 
+            variant="ghost" 
+            className="flex items-center gap-2 text-sm text-muted-foreground p-0 h-auto hover:bg-transparent hover:text-foreground"
+            onClick={() => setShowAdvanced(!showAdvanced)}
+          >
+            {showAdvanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            Opciones avanzadas
+          </Button>
+          
+          {showAdvanced && (
+            <div className="mt-4 p-4 bg-muted/30 rounded-lg">
+              <div className="max-w-md">
+                <div className="flex justify-between mb-2">
+                  <Label>Rango de Alerta Social</Label>
+                  <span className="text-sm text-muted-foreground">
+                    {socialScoreRange[0]} - {socialScoreRange[1]}
+                  </span>
+                </div>
+                <Slider
+                  defaultValue={[0, 20]}
+                  value={[socialScoreRange[0], socialScoreRange[1]]}
+                  max={20}
+                  step={1}
+                  onValueChange={(val) => setSocialScoreRange([val[0], val[1]])}
+                  className="py-4"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Filtrar pacientes basado en su puntaje de riesgo social (0-20)
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </Card>
 
