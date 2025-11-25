@@ -302,6 +302,9 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
     }
   }
 
+  // Obtener el puntaje social más reciente si está disponible
+  const socialScore = episode.latest_social_score?.score ?? null;
+
   return {
     id: episode.id,
     patientId: episode.patient_id,
@@ -322,8 +325,9 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
     prevision: undefined,
     contactNumber: undefined,
     riskLevel: riskLevel,
-    socialRisk: false, // TODO: Implementar cuando esté disponible
+    socialRisk: socialScore !== null && socialScore > 10, // Alto riesgo social si score > 10
     financialRisk: false, // TODO: Implementar cuando esté disponible
+    socialScore: socialScore,
     status: status,
     caseStatus: caseStatus,
     createdAt: episode.created_at,
@@ -522,7 +526,7 @@ export async function getClinicalEpisodes(filters?: PatientFilters): Promise<Pag
   params.append('page_size', (filters?.pageSize || 20).toString());
 
   // Incluir datos del paciente
-  params.append('include', 'patient');
+  params.append('include', 'patient,social_score');
 
   const endpoint = `/clinical-episodes/?${params.toString()}`;
   const response = await apiClient.get<any>(endpoint);

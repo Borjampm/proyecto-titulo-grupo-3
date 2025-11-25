@@ -135,7 +135,7 @@ export function PatientList({ onSelectPatient }: PatientListProps) {
               <TableHead>Desvío</TableHead>
               <TableHead>Nivel Riesgo</TableHead>
               <TableHead>Estado Caso</TableHead>
-              <TableHead>Alertas</TableHead>
+              <TableHead>Alertas Sociales</TableHead>
               <TableHead>Acción</TableHead>
             </TableRow>
           </TableHeader>
@@ -189,18 +189,22 @@ export function PatientList({ onSelectPatient }: PatientListProps) {
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <div className="flex gap-1">
-                        {patient.socialRisk && (
-                          <Badge variant="outline" className="bg-orange-50 text-orange-700 border-orange-300">
-                            Social
-                          </Badge>
-                        )}
-                        {patient.financialRisk && (
-                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-300">
-                            Financiero
-                          </Badge>
-                        )}
-                      </div>
+                      {patient.socialScore !== null && patient.socialScore !== undefined ? (
+                        <Badge 
+                          variant="outline" 
+                          className={
+                            patient.socialScore > 10 
+                              ? 'bg-red-50 text-red-700 border-red-300' 
+                              : patient.socialScore >= 6 
+                                ? 'bg-yellow-50 text-yellow-700 border-yellow-300'
+                                : 'bg-green-50 text-green-700 border-green-300'
+                          }
+                        >
+                          {patient.socialScore}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">—</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Button 
