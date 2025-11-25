@@ -835,7 +835,13 @@ async def seed_tasks(session: AsyncSession, episodes: List[ClinicalEpisode]) -> 
 async def main(reset: bool = False):
     """Main seeding function."""
     # Create engine
-    engine = create_async_engine(settings.DATABASE_URL)
+    database_url = settings.DATABASE_URL
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        
+    engine = create_async_engine(database_url)
 
     try:
         if reset:
@@ -878,7 +884,13 @@ async def main(reset: bool = False):
 
 async def clear_database_only():
     """Clear the entire database by dropping all tables and recreating them empty."""
-    engine = create_async_engine(settings.DATABASE_URL)
+    database_url = settings.DATABASE_URL
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif database_url.startswith("postgresql://"):
+        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        
+    engine = create_async_engine(database_url)
     
     try:
         print("WARNING: This will drop all tables and recreate them empty. This is a destructive action and cannot be undone.")

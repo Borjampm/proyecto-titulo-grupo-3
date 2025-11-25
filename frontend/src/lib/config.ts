@@ -17,7 +17,7 @@ export const config = {
   REQUEST_TIMEOUT: 30000,
   
   // Habilitar modo de desarrollo (usa datos mock si el backend no está disponible)
-  USE_MOCK_DATA: true, // ✅ Usando backend FastAPI real
+  USE_MOCK_DATA: false, // ✅ Usando backend FastAPI real
   
   // Usar autenticación mock (hasta que se implemente en el backend)
   USE_MOCK_AUTH: true, // ✅ Autenticación mock temporal
