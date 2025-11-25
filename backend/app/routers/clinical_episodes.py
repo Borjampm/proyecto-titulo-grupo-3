@@ -5,7 +5,6 @@ from sqlalchemy import select, func, or_, and_
 from fastapi import Depends
 from app.deps import get_session
 from sqlalchemy.orm import selectinload
-from enum import Enum
 from typing import Union
 from uuid import UUID
 from datetime import datetime
@@ -16,8 +15,10 @@ from app.models.bed import Bed
 from app.models.episode_document import EpisodeDocument
 from app.models.task_instance import TaskInstance
 from app.models.task_status_history import TaskStatusHistory
+from app.models.social_score_history import SocialScoreHistory
 from app.schemas.clinical_episode import (
     ClinicalEpisodeWithPatient,
+    ClinicalEpisodeWithIncludes,
     ClinicalEpisode,
     HistoryEventType,
     HistoryEvent,
@@ -26,6 +27,7 @@ from app.schemas.clinical_episode import (
     ReferralCreate,
     ReferralResponse
 )
+from app.schemas.social_score_history import SocialScoreHistory as SocialScoreHistorySchema
 
 
 
@@ -97,8 +99,11 @@ def build_search_filter(search: str):
         )
 
 
-class ClinicalEpisodeInclude(str, Enum):
-    PATIENT = "patient"
+def parse_includes(include: str | None) -> set[str]:
+    """Parse comma-separated include parameter into a set of include values."""
+    if not include:
+        return set()
+    return {i.strip().lower() for i in include.split(",") if i.strip()}
 
 
 @router.get("/", response_model=PaginatedClinicalEpisodes)
@@ -106,7 +111,7 @@ async def list_clinical_episodes(
     search: str | None = None,
     page: int = 1,
     page_size: int = 50,
-    include: ClinicalEpisodeInclude | None = None,
+    include: str | None = None,
     session: AsyncSession = Depends(get_session)
 ) -> PaginatedClinicalEpisodes:
     """
@@ -116,7 +121,7 @@ async def list_clinical_episodes(
     - search: Search by patient name (first, last, or full name) or room number
     - page: Page number (starts at 1)
     - page_size: Number of results per page (default: 50, max: 100)
-    - include: Optional "patient" to include patient details
+    - include: Comma-separated list of includes: "patient", "social_score" (e.g., "patient,social_score")
     
     Search examples:
     - "Maria" → finds patients with "Maria" in first or last name
@@ -130,6 +135,11 @@ async def list_clinical_episodes(
         raise HTTPException(status_code=400, detail="Page must be >= 1")
     if page_size < 1 or page_size > 100:
         raise HTTPException(status_code=400, detail="Page size must be between 1 and 100")
+    
+    # Parse includes
+    includes = parse_includes(include)
+    include_patient = "patient" in includes
+    include_social_score = "social_score" in includes
     
     # Build base query
     query = select(ClinicalEpisodeModel)
@@ -183,12 +193,73 @@ async def list_clinical_episodes(
     query = query.offset(offset).limit(page_size)
     
     # Add selectinload for patient if requested
-    if include == ClinicalEpisodeInclude.PATIENT:
+    if include_patient:
         query = query.options(selectinload(ClinicalEpisodeModel.patient))
     
     # Execute query
     result = await session.execute(query)
     episodes = result.scalars().unique().all()
+    
+    # If social_score is requested, fetch the most recent score for each episode
+    if include_social_score and episodes:
+        episode_ids = [ep.id for ep in episodes]
+        
+        # Subquery to get the most recent score per episode
+        latest_score_subquery = (
+            select(
+                SocialScoreHistory.episode_id,
+                func.max(SocialScoreHistory.recorded_at).label("max_recorded_at")
+            )
+            .where(SocialScoreHistory.episode_id.in_(episode_ids))
+            .group_by(SocialScoreHistory.episode_id)
+            .subquery()
+        )
+        
+        # Get the actual score records
+        scores_query = (
+            select(SocialScoreHistory)
+            .join(
+                latest_score_subquery,
+                and_(
+                    SocialScoreHistory.episode_id == latest_score_subquery.c.episode_id,
+                    SocialScoreHistory.recorded_at == latest_score_subquery.c.max_recorded_at
+                )
+            )
+        )
+        scores_result = await session.execute(scores_query)
+        scores = scores_result.scalars().all()
+        
+        # Create a map of episode_id to latest score
+        score_map = {score.episode_id: score for score in scores}
+        
+        # Build response with includes
+        response_data = []
+        for episode in episodes:
+            episode_dict = {
+                "id": episode.id,
+                "patient_id": episode.patient_id,
+                "discharge_at": episode.discharge_at,
+                "expected_discharge": episode.expected_discharge,
+                "status": episode.status,
+                "bed_id": episode.bed_id,
+                "admission_at": episode.admission_at,
+                "created_at": episode.created_at,
+                "updated_at": episode.updated_at,
+                "patient": episode.patient if include_patient else None,
+                "latest_social_score": score_map.get(episode.id)
+            }
+            response_data.append(ClinicalEpisodeWithIncludes(**episode_dict))
+        
+        # Calculate total pages
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 0
+        
+        return PaginatedClinicalEpisodes(
+            data=response_data,
+            total=total,
+            page=page,
+            page_size=page_size,
+            total_pages=total_pages
+        )
     
     # Calculate total pages
     total_pages = (total + page_size - 1) // page_size if total > 0 else 0
@@ -236,33 +307,63 @@ async def create_referral(
 
 
 # IMPORTANTE: Esto siempre tiene que ir al final de los endpoints porque si no una ruta se puede mappear a una ID de episodio.
-@router.get("/{episode_id}", response_model=Union[ClinicalEpisodeWithPatient, ClinicalEpisode])
+@router.get("/{episode_id}", response_model=Union[ClinicalEpisodeWithIncludes, ClinicalEpisodeWithPatient, ClinicalEpisode])
 async def get_clinical_episode(
     episode_id: UUID,
-    include: ClinicalEpisodeInclude | None = None,
+    include: str | None = None,
     session: AsyncSession = Depends(get_session)
-) -> Union[ClinicalEpisodeWithPatient, ClinicalEpisode]:
+) -> Union[ClinicalEpisodeWithIncludes, ClinicalEpisodeWithPatient, ClinicalEpisode]:
     """
     Get a specific clinical episode by ID.
     
-    Optionally include related patient information by passing include=patient.
+    Optionally include related information by passing comma-separated includes:
+    - include=patient - Include patient details
+    - include=social_score - Include the most recent social score
+    - include=patient,social_score - Include both
     """
-    if include == ClinicalEpisodeInclude.PATIENT:
-        result = await session.execute(
-            select(ClinicalEpisodeModel)
-            .where(ClinicalEpisodeModel.id == episode_id)
-            .options(selectinload(ClinicalEpisodeModel.patient))
-        )
-    else:
-        result = await session.execute(
-            select(ClinicalEpisodeModel)
-            .where(ClinicalEpisodeModel.id == episode_id)
-        )
+    # Parse includes
+    includes = parse_includes(include)
+    include_patient = "patient" in includes
+    include_social_score = "social_score" in includes
     
+    # Build query
+    query = select(ClinicalEpisodeModel).where(ClinicalEpisodeModel.id == episode_id)
+    
+    if include_patient:
+        query = query.options(selectinload(ClinicalEpisodeModel.patient))
+    
+    result = await session.execute(query)
     episode = result.scalar_one_or_none()
     
     if not episode:
         raise HTTPException(status_code=404, detail="Clinical episode not found")
+    
+    # If social_score is requested, fetch the most recent score
+    if include_social_score:
+        score_query = (
+            select(SocialScoreHistory)
+            .where(SocialScoreHistory.episode_id == episode_id)
+            .order_by(SocialScoreHistory.recorded_at.desc())
+            .limit(1)
+        )
+        score_result = await session.execute(score_query)
+        latest_score = score_result.scalar_one_or_none()
+        
+        # Build response with includes
+        episode_dict = {
+            "id": episode.id,
+            "patient_id": episode.patient_id,
+            "discharge_at": episode.discharge_at,
+            "expected_discharge": episode.expected_discharge,
+            "status": episode.status,
+            "bed_id": episode.bed_id,
+            "admission_at": episode.admission_at,
+            "created_at": episode.created_at,
+            "updated_at": episode.updated_at,
+            "patient": episode.patient if include_patient else None,
+            "latest_social_score": latest_score
+        }
+        return ClinicalEpisodeWithIncludes(**episode_dict)
     
     return episode
 
