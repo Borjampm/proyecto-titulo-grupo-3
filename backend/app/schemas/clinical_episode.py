@@ -79,6 +79,7 @@ class HistoryEventType(str, Enum):
     DOCUMENT_UPLOADED = "document_uploaded"
     TASK_CREATED = "task_created"
     TASK_UPDATED = "task_updated"
+    SOCIAL_SCORE_RECORDED = "social_score_recorded"
 
 
 class HistoryEvent(BaseModel):

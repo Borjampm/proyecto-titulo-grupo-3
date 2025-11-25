@@ -381,6 +381,7 @@ async def get_episode_history(
     - Documents uploaded
     - Tasks created
     - Task status updates (complete history of all status changes)
+    - Social score recordings (all scores with dates)
     """
     # Verify episode exists
     episode_result = await session.execute(
@@ -486,6 +487,31 @@ async def get_episode_history(
                     "notes": status_change.notes
                 }
             ))
+    
+    # 5. Social score recording events
+    social_scores_result = await session.execute(
+        select(SocialScoreHistory)
+        .where(SocialScoreHistory.episode_id == episode_id)
+        .order_by(SocialScoreHistory.recorded_at)
+    )
+    social_scores = social_scores_result.scalars().all()
+    
+    for score in social_scores:
+        description = f"Score social calculado: {score.score}"
+        if score.recorded_by:
+            description += f" by {score.recorded_by}"
+        
+        events.append(HistoryEvent(
+            event_type=HistoryEventType.SOCIAL_SCORE_RECORDED,
+            event_date=score.recorded_at,
+            description=description,
+            metadata={
+                "score_id": str(score.id),
+                "score": score.score,
+                "recorded_by": score.recorded_by,
+                "notes": score.notes
+            }
+        ))
     
     # Sort events by date
     events.sort(key=lambda x: x.event_date)
