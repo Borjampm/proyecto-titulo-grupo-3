@@ -11,11 +11,13 @@ import logging
 from datetime import datetime, date
 from pathlib import Path
 from typing import Any, Dict, Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+import unicodedata
+import re
 
 from app.db import SessionLocal
 from app.models.bed import Bed
@@ -133,6 +135,20 @@ class ExcelUploader:
 
     def __init__(self, db_session: AsyncSession):
         self.db = db_session
+
+    def _normalize_col_name(self, col_name: str) -> str:
+        """Normalize a column name for matching: remove accents/punctuation, collapse whitespace, lower-case."""
+        if not isinstance(col_name, str):
+            col_name = str(col_name)
+
+        s = col_name.replace("\xa0", " ")
+        s = unicodedata.normalize("NFKD", s)
+        # remove diacritics
+        s = "".join(ch for ch in s if not unicodedata.combining(ch))
+        # keep alphanumerics and spaces
+        s = re.sub(r"[^0-9A-Za-z\s]", " ", s)
+        s = re.sub(r"\s+", " ", s).strip().lower()
+        return s
 
     # ==================== BED DATA UPLOAD ====================
 
@@ -286,6 +302,482 @@ class ExcelUploader:
             logger.error(f"Error uploading patients: {e}")
             await self.db.rollback()
             raise
+
+    # ==================== GESTION ESTADÍA (UCCC) UPLOAD ====================
+
+    async def upload_gestion_estadia_from_excel(self, excel_path: str | Path) -> int:
+        """
+        Upload patient and episode data from the "UCCC" sheet in the Gestion Estadía Excel file.
+
+        Args:
+            excel_path: Path to the Gestion Estadía file
+
+        Returns:
+            Number of rows processed (patients/episodes)
+        """
+        logger.info(f"Reading Gestion Estadía data from {excel_path}")
+
+        try:
+            # Read the sheet and detect the true header row (some files have title rows above header)
+            raw = pd.read_excel(excel_path, sheet_name="UCCC", header=None)
+
+            def _detect_header_row(df_raw, max_scan=20, min_tokens=3):
+                tokens = ["rut", "nombre", "episodio", "cama", "fecha", "sexo", "inicio", "nacimiento", "hora"]
+                scan_rows = min(max_scan, len(df_raw))
+                for i in range(scan_rows):
+                    row = df_raw.iloc[i].fillna("").astype(str).str.lower().tolist()
+                    found = set()
+                    for cell in row:
+                        for t in tokens:
+                            if t in cell:
+                                found.add(t)
+                    if len(found) >= min_tokens:
+                        return i
+                return None
+
+            header_idx = _detect_header_row(raw)
+            if header_idx is None:
+                logger.info("Could not detect header row automatically; using pandas default header (row 0).")
+                df = pd.read_excel(excel_path, sheet_name="UCCC")
+            else:
+                logger.info(f"Detected header row at index: {header_idx}. Re-reading UCCC sheet using that header.")
+                df = pd.read_excel(excel_path, sheet_name="UCCC", header=header_idx)
+
+            # Trim whitespace in original column names
+            df.columns = df.columns.map(lambda c: c if not isinstance(c, str) else c.strip())
+
+            # Build normalized->original map for flexible lookup
+            col_map = {}
+            for col in df.columns:
+                if isinstance(col, str):
+                    norm = self._normalize_col_name(col) if hasattr(self, '_normalize_col_name') else col.strip().lower()
+                    col_map[norm] = col
+
+            # Try to map common UCCC column variants to canonical names used by the importer
+            canonical_candidates = {
+                "RUT": ["RUT", "rut"],
+                "Nombre": ["Nombre", "nombre"],
+                "Episodio:": ["Episodio:", "Episodio", "Episodio / Estadía", "episodio"],
+                "CAMA": ["CAMA", "Cama"],
+                "Fecha de Nacimiento": ["Fecha de Nacimiento", "Fecha de nacimiento", "fecha de nacimiento"],
+                "Sexo": ["Sexo", "sexo"],
+                "Fecha Inicio:": ["Fecha Inicio:", "Fecha Inicio", "Fecha de Inicio", "fecha inicio"],
+                "Hora Inicio:": ["Hora Inicio:", "Hora Inicio", "Hora de Inicio", "hora inicio"],
+                "Texto libre diagnóstico admisión": ["Texto libre diagnóstico admisión", "Texto libre diagnostico admision"],
+                "OTROS DIAGNOSTICOS": ["OTROS DIAGNOSTICOS", "Otros Diagnosticos"],
+                "TRATAMIENTO": ["TRATAMIENTO", "Tratamiento"],
+                "FRECUENCIA": ["FRECUENCIA", "Frecuencia"],
+                "ACCESO VASCULAR": ["ACCESO VASCULAR", "Acceso Vascular"],
+                "CAUSA RECHAZO": ["CAUSA RECHAZO", "Causa Rechazo"],
+                "TEXTO LIBRE CAUSA": ["TEXTO LIBRE CAUSA", "Texto libre causa"],
+                "Motivos Rechazo": ["Motivos Rechazo", "Motivos rechazo"],
+                "Motivos Devolución": ["Motivos Devolución", "Motivos Devolucion"],
+                # metadata
+                "Control": ["Control"],
+                "Marco Temporal": ["Marco Temporal"],
+                "Modificación": ["Modificación", "Modificacion"],
+                "Informe": ["Informe"],
+                "Gestionado en UCCC?": ["Gestionado en UCCC?", "Gestionado en UCCC"],
+                "EDAD": ["EDAD", "Edad"],
+                "Nombre de la aseguradora": ["Nombre de la aseguradora", "Nombre de la aseguradora"],
+                "Convenio": ["Convenio"],
+                "DIRECCIÓN": ["DIRECCIÓN", "DIRECCION", "Direccion"],
+                "TELÉFONO": ["TELÉFONO", "TELEFONO", "Telefono"],
+            }
+
+            def find_orig(col_map, candidates):
+                for c in candidates:
+                    norm = self._normalize_col_name(c) if hasattr(self, '_normalize_col_name') else c.strip().lower()
+                    if norm in col_map:
+                        return col_map[norm]
+                # try startswith match
+                for c in candidates:
+                    norm = self._normalize_col_name(c) if hasattr(self, '_normalize_col_name') else c.strip().lower()
+                    for k, v in col_map.items():
+                        if k.startswith(norm) or norm.startswith(k):
+                            return v
+                return None
+
+            rename_map = {}
+            for canonical, candidates in canonical_candidates.items():
+                orig = find_orig(col_map, candidates)
+                if orig:
+                    # only rename if original column exists
+                    rename_map[orig] = canonical
+
+            if rename_map:
+                df = df.rename(columns=rename_map)
+
+            # expose the normalized map for downstream helpers
+            self._gestion_col_map = col_map
+
+            logger.info(f"Found {len(df)} rows in UCCC sheet; columns: {list(df.columns)}")
+
+            processed = 0
+
+            for idx, row in df.iterrows():
+                try:
+                    await self._process_gestion_row(row, idx)
+                    processed += 1
+                except Exception as e:
+                    logger.error(f"Error processing UCCC row {idx}: {e}")
+                    continue
+
+            # After processing the UCCC sheet, also try to process discharge records
+            # from the ALTAS sheet in the same file so episodes get their discharge timestamps.
+            try:
+                await self._process_altas_sheet(excel_path)
+            except Exception as e:
+                logger.warning(f"Processing ALTAS sheet failed or not present: {e}")
+
+            await self.db.commit()
+            logger.info(f"Successfully processed {processed} UCCC rows (and applied ALTAS updates)")
+            return processed
+
+        except Exception as e:
+            logger.error(f"Error uploading Gestion Estadía: {e}")
+            await self.db.rollback()
+            raise
+
+    async def _process_gestion_row(self, row: pd.Series, row_idx: int) -> None:
+        """Process a single row from the Gestion Estadía (UCCC) sheet."""
+        # Parse patient data (RUT is used as medical_identifier)
+        patient_data = self._parse_gestion_patient_data(row)
+        if not patient_data:
+            return
+
+        patient = await self._create_or_get_patient(patient_data)
+
+        # Patient information: include address, phone, insurer, convenio, etc.
+        patient_info = self._parse_patient_information(row)
+        if patient_info:
+            await self._create_or_update_patient_information(patient.id, patient_info)
+
+        # Parse episode data (admission, discharge, bed)
+        episode_data = self._parse_gestion_episode_data(row)
+        episode = await self._create_clinical_episode(patient.id, episode_data)
+
+        # Episode information: diagnosis, treatment, rejections, motives, etc.
+        episode_info_records = []
+
+        # Texto libre diagnóstico admisión
+        diag = row.get("Texto libre diagnóstico admisión")
+        if not pd.isna(diag) and str(diag).strip().lower() != 'nan':
+            episode_info_records.append({
+                "info_type": EpisodeInfoType.DIAGNOSIS,
+                "title": "Diagnóstico de Admisión",
+                "value": {"diagnosis": str(diag).strip()},
+            })
+
+        # Otros diagnósticos
+        otros = row.get("OTROS DIAGNOSTICOS")
+        if not pd.isna(otros) and str(otros).strip().lower() != 'nan':
+            episode_info_records.append({
+                "info_type": EpisodeInfoType.OTHER,
+                "title": "Otros Diagnósticos",
+                "value": {"otros_diagnosticos": str(otros).strip()},
+            })
+
+        # Tratamiento / Frecuencia / Acceso vascular
+        tratamiento = row.get("TRATAMIENTO")
+        frecuencia = row.get("FRECUENCIA")
+        acceso = row.get("ACCESO VASCULAR")
+        if (not pd.isna(tratamiento) and str(tratamiento).strip().lower() != 'nan') or \
+           (not pd.isna(frecuencia) and str(frecuencia).strip().lower() != 'nan') or \
+           (not pd.isna(acceso) and str(acceso).strip().lower() != 'nan'):
+            episode_info_records.append({
+                "info_type": EpisodeInfoType.OTHER,
+                "title": "Tratamiento y Acceso",
+                "value": {
+                    "tratamiento": str(tratamiento).strip() if not pd.isna(tratamiento) else None,
+                    "frecuencia": str(frecuencia).strip() if not pd.isna(frecuencia) else None,
+                    "acceso_vascular": str(acceso).strip() if not pd.isna(acceso) else None,
+                },
+            })
+
+        # Rejection reasons / Motivos
+        causa_rechazo = row.get("CAUSA RECHAZO") or row.get("TEXTO LIBRE CAUSA")
+        motivos_rechazo = row.get("Motivos Rechazo")
+        motivos_devolucion = row.get("Motivos Devolución")
+        if (not pd.isna(causa_rechazo) and str(causa_rechazo).strip().lower() != 'nan') or \
+           (not pd.isna(motivos_rechazo) and str(motivos_rechazo).strip().lower() != 'nan') or \
+           (not pd.isna(motivos_devolucion) and str(motivos_devolucion).strip().lower() != 'nan'):
+            episode_info_records.append({
+                "info_type": EpisodeInfoType.OTHER,
+                "title": "Rechazos y Devoluciones",
+                "value": {
+                    "causa_rechazo": str(causa_rechazo).strip() if not pd.isna(causa_rechazo) else None,
+                    "motivos_rechazo": str(motivos_rechazo).strip() if not pd.isna(motivos_rechazo) else None,
+                    "motivos_devolucion": str(motivos_devolucion).strip() if not pd.isna(motivos_devolucion) else None,
+                },
+            })
+
+        # Add any additional useful columns as OTHER records
+        extras = [
+            "Control", "Marco Temporal", "Modificación", "Informe", "Gestionado en UCCC?",
+            "EDAD", "Nombre de la aseguradora", "Convenio", "DIRECCIÓN", "TELÉFONO"
+        ]
+        extra_values = {}
+        for col in extras:
+            if col in row.index:
+                val = row.get(col)
+                if not pd.isna(val) and str(val).strip().lower() != 'nan':
+                    extra_values[col] = str(val).strip()
+
+        if extra_values:
+            episode_info_records.append({
+                "info_type": EpisodeInfoType.OTHER,
+                "title": "Metadatos UCCC",
+                "value": extra_values,
+            })
+
+        # Persist episode info records
+        for info in episode_info_records:
+            await self._create_clinical_episode_information(episode.id, info)
+
+        logger.info(f"Processed UCCC patient {patient.medical_identifier} row {row_idx}")
+
+    def _parse_gestion_patient_data(self, row: pd.Series) -> Optional[Dict[str, Any]]:
+        """Parse patient basic data from Gestion Estadía (UCCC) row.
+
+        Uses RUT column as `medical_identifier`. If RUT missing, generate a placeholder RUT
+        using the episode column as seed so data remains consistent across runs.
+        """
+        try:
+            # Ensure column names trimmed
+            # Use RUT as medical identifier
+            rut_raw = row.get("RUT")
+
+            episodio_raw = row.get("Episodio:") or row.get("Episodio") or row.get("Episodio / Estadía")
+            episodio_str = str(episodio_raw).strip() if not pd.isna(episodio_raw) else None
+
+            if pd.isna(rut_raw) or str(rut_raw).strip() == "" or str(rut_raw).strip().lower() == "nan":
+                # Generate rut if missing, using episodio as seed if available
+                seed = episodio_str or str(uuid4())
+                rut = generate_rut(seed)
+                medical_identifier = rut
+            else:
+                rut = str(rut_raw).strip()
+                medical_identifier = rut
+
+            # Nombre
+            nombre_raw = row.get("Nombre")
+            if pd.isna(nombre_raw) or str(nombre_raw).strip() == "" or str(nombre_raw).strip().lower() == "nan":
+                # Use episode seed for consistent placeholder name
+                seed = episodio_str or medical_identifier
+                first_name, last_name = get_name(seed)
+            else:
+                nombre = str(nombre_raw).strip()
+                name_parts = nombre.split(None, 1)
+                if len(name_parts) >= 2:
+                    first_name, last_name = name_parts[0], name_parts[1]
+                else:
+                    first_name, last_name = nombre, ""
+
+            # Birth date - normalize and try explicit formats (DD-MM-YYYY, DD-MM-YY) then day-first autodetect
+            birth_date_raw = row.get("Fecha de Nacimiento") or row.get("Fecha de Nacimiento ")
+            birth_date = date(1970, 1, 1)
+            try:
+                if pd.isna(birth_date_raw):
+                    birth_date = date(1970, 1, 1)
+                elif isinstance(birth_date_raw, pd.Timestamp):
+                    birth_date = birth_date_raw.date()
+                elif isinstance(birth_date_raw, date):
+                    birth_date = birth_date_raw
+                else:
+                    # Clean string: remove non-breaking spaces and control chars
+                    s = str(birth_date_raw).strip()
+                    s = s.replace("\xa0", " ").strip()
+
+                    # Try explicit formats
+                    dt = None
+                    try:
+                        dt = pd.to_datetime(s, format='%d-%m-%Y', dayfirst=True, errors='coerce')
+                    except:
+                        dt = None
+
+                    if dt is None or pd.isna(dt):
+                        try:
+                            dt = pd.to_datetime(s, format='%d-%m-%y', dayfirst=True, errors='coerce')
+                        except:
+                            dt = None
+
+                    if dt is None or pd.isna(dt):
+                        try:
+                            dt = pd.to_datetime(s, dayfirst=True, errors='coerce')
+                        except:
+                            dt = None
+
+                    if dt is not None and not pd.isna(dt):
+                        birth_date = dt.date()
+                    else:
+                        birth_date = date(1970, 1, 1)
+            except Exception:
+                birth_date = date(1970, 1, 1)
+
+            # Sex (robust mapping: accepts 'Masculino', 'Mas', 'M', 'Hombre', 'Femenino', 'Fem', 'F', 'Mujer')
+            sexo_raw = row.get("Sexo")
+            gender = "Desconocido"
+            try:
+                if not pd.isna(sexo_raw):
+                    s = str(sexo_raw).strip()
+                    # Normalize unicode (remove accents) and uppercase
+                    s_norm = unicodedata.normalize('NFKD', s).encode('ascii', errors='ignore').decode('ascii').upper()
+
+                    masculine_tokens = ("M", "MAS", "MASCULINO", "H", "HOM", "HOMBRE")
+                    feminine_tokens = ("F", "FEM", "FEMENINO", "MUJ", "MUJER")
+
+                    if any(s_norm == t or s_norm.startswith(t) for t in masculine_tokens):
+                        gender = "Masculino"
+                    elif any(s_norm == t or s_norm.startswith(t) for t in feminine_tokens):
+                        gender = "Femenino"
+                    else:
+                        gender = s.title()
+            except Exception:
+                gender = "Desconocido"
+
+            return {
+                "medical_identifier": medical_identifier,
+                "first_name": first_name,
+                "last_name": last_name,
+                "rut": rut,
+                "birth_date": birth_date,
+                "gender": gender,
+            }
+
+        except Exception as e:
+            logger.error(f"Error parsing UCCC patient data: {e}")
+            return None
+
+    def _parse_gestion_episode_data(self, row: pd.Series) -> Dict[str, Any]:
+        """Parse clinical episode data from Gestion Estadía (UCCC) row.
+
+        - Admission: from "Fecha Inicio:" and optional "Hora Inicio:" columns
+        - Discharge: attempts to find any column with keywords (alta/egreso/salida/fin)
+        - Bed: from "CAMA" column
+        - Status: DISCHARGED if discharge_at present
+        """
+        try:
+            # Admission date + time
+            admission_date_raw = row.get("Fecha Inicio:") or row.get("Fecha Inicio")
+            admission_time_raw = row.get("Hora Inicio:") or row.get("Hora Inicio")
+
+            # Parse admission date: common format in file is DD-MM-YY (e.g., 30-10-24)
+            if pd.isna(admission_date_raw):
+                admission_at = datetime.now()
+            else:
+                ad_dt = None
+                # Normalize string if not a Timestamp
+                try:
+                    if isinstance(admission_date_raw, pd.Timestamp) or isinstance(admission_date_raw, date):
+                        ad_candidate = admission_date_raw
+                    else:
+                        s = str(admission_date_raw).strip()
+                        s = s.replace("\xa0", " ").strip()
+                        ad_candidate = s
+
+                    # Try DD-MM-YY first
+                    try:
+                        ad_dt = pd.to_datetime(ad_candidate, format='%d-%m-%y', dayfirst=True, errors='coerce')
+                    except:
+                        ad_dt = None
+
+                    # Try DD-MM-YYYY
+                    if ad_dt is None or pd.isna(ad_dt):
+                        try:
+                            ad_dt = pd.to_datetime(ad_candidate, format='%d-%m-%Y', dayfirst=True, errors='coerce')
+                        except:
+                            ad_dt = None
+
+                    # Fallback to pandas auto-detection with dayfirst
+                    if ad_dt is None or pd.isna(ad_dt):
+                        try:
+                            ad_dt = pd.to_datetime(ad_candidate, dayfirst=True, errors='coerce')
+                        except:
+                            ad_dt = None
+
+                    if ad_dt is not None and not pd.isna(ad_dt):
+                        admission_at = ad_dt.to_pydatetime()
+                    else:
+                        admission_at = datetime.now()
+                except Exception:
+                    admission_at = datetime.now()
+
+            # If a time column exists, try to combine (formats like HH:MM:SS)
+            if not pd.isna(admission_time_raw):
+                try:
+                    # Normalize time string
+                    if isinstance(admission_time_raw, pd.Timestamp):
+                        time_candidate = admission_time_raw
+                    else:
+                        ts = str(admission_time_raw).strip()
+                        ts = ts.replace("\xa0", " ").strip()
+                        time_candidate = ts
+
+                    time_dt = pd.to_datetime(time_candidate, format='%H:%M:%S', errors='coerce')
+                    if pd.isna(time_dt):
+                        time_dt = pd.to_datetime(time_candidate, errors='coerce')
+
+                    if not pd.isna(time_dt):
+                        admission_at = admission_at.replace(
+                            hour=time_dt.hour, minute=time_dt.minute, second=time_dt.second
+                        )
+                except Exception:
+                    # ignore time parse errors and keep admission_at as-is
+                    pass
+
+            # Discharge: attempt to find a discharge-like column
+            discharge_at = None
+            expected_discharge = None
+            discharge_candidates = [c for c in row.index if isinstance(c, str) and any(k in c.lower() for k in ["alta", "egreso", "salida", "fin", "termin"]) ]
+            discharge_col = discharge_candidates[0] if discharge_candidates else None
+            if discharge_col:
+                discharge_raw = row.get(discharge_col)
+                if not pd.isna(discharge_raw):
+                    try:
+                        dis_dt = pd.to_datetime(discharge_raw, errors='coerce')
+                        if not pd.isna(dis_dt):
+                            discharge_at = dis_dt.to_pydatetime()
+                            expected_discharge = dis_dt.date()
+                    except Exception as e:
+                        logger.debug(f"Could not parse discharge value '{discharge_raw}': {e}")
+
+            # Bed
+            bed_raw = row.get("CAMA")
+            bed_room = None
+            if not pd.isna(bed_raw):
+                bed_room_str = str(bed_raw).strip()
+                if bed_room_str and bed_room_str.lower() != 'nan':
+                    bed_room = bed_room_str
+
+            # Status
+            status = EpisodeStatus.ACTIVE
+            if discharge_at is not None:
+                status = EpisodeStatus.DISCHARGED
+
+            # Episode identifier - prefer explicit Episodio column
+            episode_identifier = None
+            eps = row.get("Episodio:") or row.get("Episodio") or row.get("Episodio / Estadía")
+            if not pd.isna(eps):
+                episode_identifier = str(eps).strip()
+
+            return {
+                "admission_at": admission_at,
+                "expected_discharge": expected_discharge,
+                "discharge_at": discharge_at,
+                "status": status,
+                "bed_room": bed_room,
+                "episode_identifier": episode_identifier,
+            }
+
+        except Exception as e:
+            logger.error(f"Error parsing UCCC episode data: {e}")
+            return {
+                "admission_at": datetime.now(),
+                "status": EpisodeStatus.ACTIVE,
+                "bed_room": None,
+                "episode_identifier": None,
+            }
 
     async def _process_patient_row(self, row: pd.Series, row_idx: int) -> None:
         """Process a single patient row from the Excel file."""
@@ -815,8 +1307,9 @@ class ExcelUploader:
         self, patient_id: UUID, episode_data: Dict[str, Any]
     ) -> ClinicalEpisode:
         """Create a new clinical episode with bed foreign key lookup."""
-        # Extract episode identifier for info records (not part of ClinicalEpisode model)
-        episode_identifier = episode_data.pop("episode_identifier", None)
+        # Episode identifier may be provided in episode_data and is now stored
+        # directly on the ClinicalEpisode model (episode_identifier column).
+        episode_identifier = episode_data.get("episode_identifier")
         
         # Handle bed lookup if bed_room is provided
         bed_room = episode_data.pop("bed_room", None)
@@ -830,20 +1323,204 @@ class ExcelUploader:
         episode = ClinicalEpisode(patient_id=patient_id, **episode_data)
         self.db.add(episode)
         await self.db.flush()  # Flush to get the ID
-        
-        # Store episode identifier as an information record if provided
-        if episode_identifier:
-            episode_info = ClinicalEpisodeInformation(
-                episode_id=episode.id,
-                info_type=EpisodeInfoType.OTHER,
-                title="Episodio / Estadía",
-                value={"episode_identifier": episode_identifier}
-            )
-            self.db.add(episode_info)
-            await self.db.flush()
+        # We store the episode_identifier directly on the ClinicalEpisode model.
+        # For backward compatibility, older imports may have stored it in
+        # ClinicalEpisodeInformation; we no longer create that duplicate.
         
         logger.info(f"Created clinical episode for patient {patient_id} with bed_id {bed_id}")
         return episode
+
+    async def _find_episode_by_identifier(self, episode_identifier: str) -> Optional[ClinicalEpisode]:
+        """Find a ClinicalEpisode by its episode_identifier column or via legacy info records.
+
+        Returns the ClinicalEpisode or None if not found.
+        """
+        if not episode_identifier:
+            return None
+
+        # First, try direct match on the new column
+        stmt = select(ClinicalEpisode).where(ClinicalEpisode.episode_identifier == episode_identifier)
+        result = await self.db.execute(stmt)
+        episode = result.scalar_one_or_none()
+        if episode:
+            return episode
+
+        # Fallback: search legacy ClinicalEpisodeInformation JSONB value for episode_identifier
+        try:
+            stmt2 = select(ClinicalEpisodeInformation).where(
+                ClinicalEpisodeInformation.value["episode_identifier"].astext == episode_identifier
+            )
+            res2 = await self.db.execute(stmt2)
+            info = res2.scalar_one_or_none()
+            if info:
+                stmt3 = select(ClinicalEpisode).where(ClinicalEpisode.id == info.episode_id)
+                res3 = await self.db.execute(stmt3)
+                return res3.scalar_one_or_none()
+        except Exception:
+            # JSONB lookup may fail if DB doesn't support the operator; ignore and return None
+            pass
+
+        return None
+
+    async def _process_altas_sheet(self, excel_path: str | Path) -> int:
+        """Read the ALTAS sheet and update episode discharge datetimes.
+
+        Expected columns (variants):
+        - Episodio
+        - Fe. Alta / Fecha Alta / Fecha de Alta / Fecha
+        - Hr. Alta / Hora Alta / Hora
+        """
+        logger.info(f"Reading ALTAS data from {excel_path}")
+        try:
+            raw = pd.read_excel(excel_path, sheet_name="ALTAS", header=None)
+
+            # Try to detect header row similarly to UCCC
+            def _detect_header_row(df_raw, max_scan=20, min_tokens=2):
+                tokens = ["episodio", "alta", "fe", "fe.", "hr", "hora"]
+                scan_rows = min(max_scan, len(df_raw))
+                for i in range(scan_rows):
+                    row = df_raw.iloc[i].fillna("").astype(str).str.lower().tolist()
+                    found = set()
+                    for cell in row:
+                        for t in tokens:
+                            if t in cell:
+                                found.add(t)
+                    if len(found) >= min_tokens:
+                        return i
+                return None
+
+            header_idx = _detect_header_row(raw)
+            if header_idx is None:
+                df = pd.read_excel(excel_path, sheet_name="ALTAS")
+            else:
+                df = pd.read_excel(excel_path, sheet_name="ALTAS", header=header_idx)
+
+            # Normalize column names and build map
+            df.columns = df.columns.map(lambda c: c if not isinstance(c, str) else c.strip())
+            col_map = {}
+            for col in df.columns:
+                if isinstance(col, str):
+                    norm = self._normalize_col_name(col) if hasattr(self, '_normalize_col_name') else col.strip().lower()
+                    col_map[norm] = col
+
+            # Map ALTAS canonical columns
+            candidates = {
+                "Episodio": ["Episodio", "episodio"],
+                "Fe. Alta": ["Fe. Alta", "Fe Alta", "Fecha Alta", "Fecha de Alta", "fecha alta", "fe. alta", "fe alta", "fecha"],
+                "Hr. Alta": ["Hr. Alta", "Hr Alta", "Hora Alta", "Hora", "hr", "hora"]
+            }
+
+            def find_orig_alt(col_map, cand_list):
+                for c in cand_list:
+                    norm = self._normalize_col_name(c)
+                    if norm in col_map:
+                        return col_map[norm]
+                for c in cand_list:
+                    norm = self._normalize_col_name(c)
+                    for k, v in col_map.items():
+                        if k.startswith(norm) or norm.startswith(k):
+                            return v
+                return None
+
+            rename_map = {}
+            for canonical, cands in candidates.items():
+                orig = find_orig_alt(col_map, cands)
+                if orig:
+                    rename_map[orig] = canonical
+
+            if rename_map:
+                df = df.rename(columns=rename_map)
+
+            logger.info(f"Found {len(df)} rows in ALTAS sheet; columns: {list(df.columns)}")
+
+            updated = 0
+            for idx, row in df.iterrows():
+                try:
+                    eps_raw = row.get("Episodio")
+                    if pd.isna(eps_raw):
+                        continue
+                    episode_identifier = str(eps_raw).strip()
+                    # Parse date
+                    fecha_raw = row.get("Fe. Alta")
+                    hora_raw = row.get("Hr. Alta")
+
+                    if pd.isna(fecha_raw) and pd.isna(hora_raw):
+                        continue
+
+                    dis_dt = None
+                    # Parse fecha
+                    if not pd.isna(fecha_raw):
+                        try:
+                            if isinstance(fecha_raw, pd.Timestamp) or isinstance(fecha_raw, date):
+                                dis_candidate = fecha_raw
+                            else:
+                                s = str(fecha_raw).strip()
+                                s = s.replace("\xa0", " ").strip()
+                                dis_candidate = s
+
+                            # Try DD-MM-YYYY first
+                            dis_dt = pd.to_datetime(dis_candidate, format='%d-%m-%Y', dayfirst=True, errors='coerce')
+                            if pd.isna(dis_dt):
+                                dis_dt = pd.to_datetime(dis_candidate, dayfirst=True, errors='coerce')
+                        except Exception:
+                            dis_dt = None
+
+                    # If only time present, parse time and combine with today? skip if no date
+                    if (dis_dt is None or pd.isna(dis_dt)) and (not pd.isna(hora_raw)):
+                        # Can't set discharge without a date; skip
+                        continue
+
+                    # Combine time if present
+                    if dis_dt is not None and not pd.isna(dis_dt):
+                        discharge_at = dis_dt.to_pydatetime()
+                        if not pd.isna(hora_raw):
+                            try:
+                                if isinstance(hora_raw, pd.Timestamp):
+                                    t_candidate = hora_raw
+                                else:
+                                    t_candidate = str(hora_raw).strip()
+
+                                t_dt = pd.to_datetime(t_candidate, format='%H:%M:%S', errors='coerce')
+                                if pd.isna(t_dt):
+                                    t_dt = pd.to_datetime(t_candidate, format='%H:%M', errors='coerce')
+                                if pd.isna(t_dt):
+                                    t_dt = pd.to_datetime(t_candidate, errors='coerce')
+
+                                if not pd.isna(t_dt):
+                                    discharge_at = discharge_at.replace(
+                                        hour=t_dt.hour, minute=t_dt.minute, second=t_dt.second
+                                    )
+                            except Exception:
+                                pass
+                    else:
+                        continue
+
+                    # Find the episode and update
+                    episode = await self._find_episode_by_identifier(episode_identifier)
+                    if not episode:
+                        logger.warning(f"ALTAS: episode with identifier '{episode_identifier}' not found; skipping")
+                        continue
+
+                    episode.discharge_at = discharge_at
+                    episode.status = EpisodeStatus.DISCHARGED
+                    try:
+                        episode.expected_discharge = discharge_at.date()
+                    except Exception:
+                        episode.expected_discharge = None
+                    episode.status = EpisodeStatus.DISCHARGED
+                    await self.db.flush()
+                    updated += 1
+
+                except Exception as e:
+                    logger.error(f"Error processing ALTAS row {idx}: {e}")
+                    continue
+
+            logger.info(f"ALTAS updates applied: {updated} episodes updated")
+            return updated
+
+        except Exception as e:
+            logger.warning(f"ALTAS sheet not available or parsing failed: {e}")
+            return 0
 
     async def _create_clinical_episode_information(
         self, episode_id: UUID, info_data: Dict[str, Any]

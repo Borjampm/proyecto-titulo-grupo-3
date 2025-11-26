@@ -61,6 +61,11 @@ class ClinicalEpisode(Base):
         nullable=False,
         server_default=func.now()
     )
+    episode_identifier: Mapped[str] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+    )
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now()

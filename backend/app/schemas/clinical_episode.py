@@ -21,6 +21,7 @@ class ClinicalEpisodeBase(BaseModel):
     status: EpisodeStatus = EpisodeStatus.ACTIVE
     bed_id: Optional[UUID] = None
     admission_at: datetime = Field(default_factory=datetime.utcnow)
+    episode_identifier: Optional[str] = None
 
 
 class ClinicalEpisodeCreate(ClinicalEpisodeBase):
@@ -35,6 +36,7 @@ class ClinicalEpisodeUpdate(BaseModel):
     status: Optional[EpisodeStatus] = None
     bed_id: Optional[UUID] = None
     admission_at: Optional[datetime] = None
+    episode_identifier: Optional[str] = None
 
 
 class ClinicalEpisode(ClinicalEpisodeBase):
