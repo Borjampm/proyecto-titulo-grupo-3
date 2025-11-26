@@ -1501,6 +1501,7 @@ class ExcelUploader:
                         continue
 
                     episode.discharge_at = discharge_at
+                    episode.status = EpisodeStatus.DISCHARGED
                     try:
                         episode.expected_discharge = discharge_at.date()
                     except Exception:
