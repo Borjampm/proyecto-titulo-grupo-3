@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { importPatientsFromExcel } from '../lib/api-fastapi';
+import { importPatientsFromExcel, importSocialScoresFromExcel } from '../lib/api-fastapi';
 import { toast } from 'sonner';
 
 type ExcelFileType = 'default' | 'score_social';
@@ -12,7 +12,12 @@ type ExcelFileType = 'default' | 'score_social';
 export function DataUpload() {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [fileName, setFileName] = useState('');
-  const [uploadResult, setUploadResult] = useState<{ imported: number; errors: string[] } | null>(null);
+  const [uploadResult, setUploadResult] = useState<{ 
+    imported: number; 
+    errors: string[]; 
+    missingCount?: number; 
+    missingIds?: string[] 
+  } | null>(null);
   const [fileType, setFileType] = useState<ExcelFileType>('default');
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -22,18 +27,36 @@ export function DataUpload() {
       setUploadStatus('loading');
       
       try {
-        const result = await importPatientsFromExcel(file);
-        setUploadResult({ imported: result.imported, errors: result.errors });
+        // Use different endpoint based on file type
+        const result = fileType === 'score_social' 
+          ? await importSocialScoresFromExcel(file)
+          : await importPatientsFromExcel(file);
+        
+        setUploadResult({ 
+          imported: result.imported, 
+          errors: result.errors,
+          missingCount: result.missingCount,
+          missingIds: result.missingIds
+        });
         setUploadStatus('success');
-        toast.success(`${result.imported} pacientes importados exitosamente`);
+        
+        const successMessage = fileType === 'score_social'
+          ? `${result.imported} registros de score social importados exitosamente`
+          : `${result.imported} pacientes importados exitosamente`;
+        toast.success(successMessage);
+        
+        if (result.missingCount && result.missingCount > 0) {
+          toast.warning(`${result.missingCount} registros no se pudieron asociar a episodios existentes`);
+        }
         
         if (result.errors.length > 0) {
           result.errors.forEach(error => toast.error(error));
         }
         
-        setTimeout(() => setUploadStatus('idle'), 5000);
+        setTimeout(() => setUploadStatus('idle'), 10000);
       } catch (error) {
         console.error('Error uploading file:', error);
+        setUploadResult(null);
         setUploadStatus('error');
         toast.error('Error al importar el archivo');
         setTimeout(() => setUploadStatus('idle'), 3000);
@@ -51,12 +74,42 @@ export function DataUpload() {
       </div>
 
       {uploadStatus === 'success' && uploadResult && (
-        <Alert className="border-green-200 bg-green-50">
-          <CheckCircle className="w-4 h-4 text-green-600" />
-          <AlertDescription className="text-green-800">
-            Archivo "{fileName}" cargado exitosamente. {uploadResult.imported} registros procesados.
-          </AlertDescription>
-        </Alert>
+        <div className="space-y-4">
+          <Alert className="border-green-200 bg-green-50">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+            <AlertDescription className="text-green-800">
+              Archivo &quot;{fileName}&quot; cargado exitosamente. {uploadResult.imported} registros procesados.
+            </AlertDescription>
+          </Alert>
+          
+          {uploadResult.missingCount !== undefined && uploadResult.missingCount > 0 && (
+            <Alert className="border-yellow-200 bg-yellow-50">
+              <AlertCircle className="w-4 h-4 text-yellow-600" />
+              <AlertDescription className="text-yellow-800">
+                <p className="font-medium mb-1">
+                  Advertencia: {uploadResult.missingCount} registros no se pudieron asociar a ningún episodio existente.
+                </p>
+                <p className="text-sm mb-2">
+                  Estos registros fueron ignorados porque el identificador de episodio no coincide con ningún paciente en el sistema.
+                </p>
+                {uploadResult.missingIds && uploadResult.missingIds.length > 0 && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-sm font-medium hover:underline">
+                      Ver IDs no encontrados ({uploadResult.missingIds.length})
+                    </summary>
+                    <div className="mt-2 text-xs bg-yellow-100 p-2 rounded max-h-32 overflow-y-auto">
+                      {uploadResult.missingIds.map((id, index) => (
+                        <span key={id}>
+                          {id}{index < uploadResult.missingIds!.length - 1 ? ', ' : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </details>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+        </div>
       )}
 
       {uploadStatus === 'loading' && (
@@ -121,9 +174,21 @@ export function DataUpload() {
         <Card className="p-6">
           <h3 className="mb-4">Formato Esperado</h3>
           {fileType === 'score_social' ? (
-            <p className="text-muted-foreground">
-              El archivo debe tener una hoja Data Casos con una columna puntaje
-            </p>
+            <>
+              <p className="text-muted-foreground mb-4">
+                El archivo debe contener una hoja &quot;Data Casos&quot; con las siguientes columnas:
+              </p>
+              <ul className="space-y-2 text-muted-foreground">
+                <li>• <strong>Episodio / Estadía</strong> - Identificador del episodio</li>
+                <li>• <strong>Puntaje</strong> - Score social (puede ser vacío)</li>
+                <li>• <strong>Fecha Asignación</strong> - Fecha de registro</li>
+                <li>• <strong>Encuestadora</strong> - Persona que registró</li>
+                <li>• <strong>Motivo</strong> - Razón si no hay puntaje</li>
+              </ul>
+              <p className="text-muted-foreground mt-4 text-sm">
+                Los registros sin puntaje se mostrarán como N/A con su motivo correspondiente.
+              </p>
+            </>
           ) : (
             <>
               <p className="text-muted-foreground mb-4">
