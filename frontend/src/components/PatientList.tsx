@@ -278,7 +278,9 @@ export function PatientList({
                           {patient.socialScore}
                         </Badge>
                       ) : (
-                        <span className="text-muted-foreground text-sm">—</span>
+                        <span className="text-muted-foreground text-sm" title={patient.socialScoreReason || 'No disponible'}>
+                          N/A
+                        </span>
                       )}
                     </TableCell>
                     <TableCell>

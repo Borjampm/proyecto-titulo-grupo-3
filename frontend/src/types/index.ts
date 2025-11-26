@@ -20,7 +20,8 @@ export interface Patient {
   riskLevel: RiskLevel;
   socialRisk: boolean;
   financialRisk: boolean;
-  socialScore?: number | null; // Puntaje social (0-100)
+  socialScore?: number | null; // Puntaje social (can be null)
+  socialScoreReason?: string | null; // Reason if social score is null (Motivo)
   status: PatientStatus;
   caseStatus: CaseStatus;
   grg: string;
@@ -170,4 +171,6 @@ export interface ExcelImportResult {
   imported: number;
   errors: string[];
   patients?: Patient[];
+  missingCount?: number;
+  missingIds?: string[];
 }

@@ -2,7 +2,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import Integer, String, DateTime, ForeignKey, func
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from app.db import Base
 
 if TYPE_CHECKING:
@@ -23,9 +23,13 @@ class SocialScoreHistory(Base):
         nullable=False,
         index=True
     )
-    score: Mapped[int] = mapped_column(
+    score: Mapped[Optional[int]] = mapped_column(
         Integer,
-        nullable=False
+        nullable=True  # Score can be null when there's a reason for no score
+    )
+    no_score_reason: Mapped[Optional[str]] = mapped_column(
+        String(500),
+        nullable=True  # Reason why score could not be calculated (from "Motivo" column)
     )
     recorded_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),

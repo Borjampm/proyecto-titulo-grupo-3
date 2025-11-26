@@ -110,7 +110,8 @@ async def upload_patients(
     finally:
         # Clean up temporary file
         Path(tmp_file_path).unlink(missing_ok=True)
-
+        
+       
 
 @router.post("/upload-gestion-estadia")
 async def upload_gestion_estadia(
@@ -126,7 +127,7 @@ async def upload_gestion_estadia(
     if not file.filename.endswith(('.xlsx', '.xls', '.xlsm')):
         raise HTTPException(
             status_code=400,
-            detail="Invalid file type. Please upload an Excel file (.xlsx or .xls)"
+            detail="Invalid file type. Please upload an Excel file (.xlsx, .xls, .xlsm)"
         )
 
     try:
@@ -153,6 +154,60 @@ async def upload_gestion_estadia(
     finally:
         Path(tmp_file_path).unlink(missing_ok=True)
 
+
+@router.post("/upload-social-scores")
+async def upload_social_scores(
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session)
+) -> Dict[str, Any]:
+    """
+    Upload social score data from "Score Social" Excel file.
+    
+    Expected file: Excel file with "Data Casos" sheet containing:
+    - Episodio / Estadía: Episode identifier to match
+    - Puntaje: The social score (can be null)
+    - Fecha Asignación: Recorded date (used as recorded_at)
+    - Encuestadora: Person who recorded (used as recorded_by)
+    - Motivo: Reason if score is null
+    
+    Returns:
+        Dictionary with upload statistics (scores_processed, status, message)
+    """
+    # Validate file type
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Please upload an Excel file (.xlsx or .xls)"
+        )
+    
+    # Save uploaded file temporarily
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_file_path = tmp_file.name
+        
+        # Upload social scores using the ExcelUploader
+        uploader = ExcelUploader(session)
+        result = await uploader.upload_social_scores_from_excel(tmp_file_path)
+        
+        return {
+            "status": "success",
+            "message": f"Successfully processed {result['count']} social score records",
+            "scores_processed": result['count'],
+            "missing_count": result['missing_count'],
+            "missing_ids": result['missing_ids'],
+        }
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading social scores: {str(e)}"
+        )
+    
+    finally:
+        # Clean up temporary file
+        Path(tmp_file_path).unlink(missing_ok=True)
 
 @router.post("/upload-all")
 async def upload_all(
