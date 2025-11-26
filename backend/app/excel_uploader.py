@@ -863,7 +863,7 @@ class ExcelUploader:
 
     # ==================== SOCIAL SCORE DATA UPLOAD ====================
 
-    async def upload_social_scores_from_excel(self, excel_path: str | Path) -> int:
+    async def upload_social_scores_from_excel(self, excel_path: str | Path) -> Dict[str, Any]:
         """
         Upload social score data from "Data Casos" sheet in the Score Social Excel file.
 
@@ -878,7 +878,10 @@ class ExcelUploader:
             excel_path: Path to the "Score Social.xlsx" file
 
         Returns:
-            Number of social scores uploaded
+            Dictionary with upload statistics:
+            - count: Number of social scores uploaded
+            - missing_count: Number of records where episode was not found
+            - missing_ids: List of episode identifiers that were not found
         """
         logger.info(f"Reading social score data from {excel_path}")
 
@@ -887,6 +890,7 @@ class ExcelUploader:
             logger.info(f"Found {len(df)} rows in Data Casos sheet")
 
             scores_created = 0
+            missing_ids = []
 
             # Build a map of episode_identifier -> episode_id for quick lookup
             episode_map = await self._build_episode_identifier_map()
@@ -903,13 +907,20 @@ class ExcelUploader:
                             scores_created += 1
                         else:
                             logger.warning(f"Episode not found for identifier: {episode_identifier}")
+                            if episode_identifier:
+                                missing_ids.append(episode_identifier)
                 except Exception as e:
                     logger.error(f"Error processing social score row {idx}: {e}")
                     continue
 
             await self.db.commit()
-            logger.info(f"Successfully uploaded {scores_created} social scores")
-            return scores_created
+            logger.info(f"Successfully uploaded {scores_created} social scores. Missing episodes: {len(missing_ids)}")
+            
+            return {
+                "count": scores_created,
+                "missing_count": len(missing_ids),
+                "missing_ids": missing_ids
+            }
 
         except Exception as e:
             logger.error(f"Error uploading social scores: {e}")
@@ -918,23 +929,43 @@ class ExcelUploader:
 
     async def _build_episode_identifier_map(self) -> Dict[str, UUID]:
         """
-        Build a map of episode identifiers (from Episodio / Estadía) to episode IDs.
+        Build a map of identifiers to episode IDs.
         
-        The episode identifier is stored in ClinicalEpisodeInformation table with
-        title "Episodio / Estadía" and value {"episode_identifier": "..."}.
+        This method creates a lookup map using two sources:
+        1. Episode identifiers stored in ClinicalEpisodeInformation (from "Episodio / Estadía")
+        2. Patient medical identifiers (for manually created patients)
+        
+        This allows matching social scores to episodes whether they were imported
+        from Excel or created manually.
         """
+        episode_map = {}
+        
+        # 1. Get episode identifiers from ClinicalEpisodeInformation
         stmt = select(ClinicalEpisodeInformation).where(
             ClinicalEpisodeInformation.title == "Episodio / Estadía"
         )
         result = await self.db.execute(stmt)
         episode_infos = result.scalars().all()
         
-        episode_map = {}
         for info in episode_infos:
             if info.value and "episode_identifier" in info.value:
                 identifier = info.value["episode_identifier"]
                 if identifier:
                     episode_map[str(identifier)] = info.episode_id
+        
+        # 2. Also map by patient medical_identifier for manually created patients
+        # Get all episodes with their associated patients
+        stmt = select(ClinicalEpisode, Patient).join(Patient)
+        result = await self.db.execute(stmt)
+        episode_patient_pairs = result.all()
+        
+        for episode, patient in episode_patient_pairs:
+            if patient.medical_identifier:
+                # Only add if not already in the map (episode identifier takes precedence)
+                if str(patient.medical_identifier) not in episode_map:
+                    episode_map[str(patient.medical_identifier)] = episode.id
+        
+        logger.info(f"Episode map contains {len(episode_map)} entries (from episode info and patient medical identifiers)")
         
         return episode_map
 
@@ -1086,7 +1117,7 @@ async def upload_patients_only(excel_path: str | Path) -> int:
         return await uploader.upload_patients_from_excel(excel_path)
 
 
-async def upload_social_scores_only(excel_path: str | Path) -> int:
+async def upload_social_scores_only(excel_path: str | Path) -> Dict[str, Any]:
     """Upload only social score data from the Score Social Excel file."""
     async with SessionLocal() as session:
         uploader = ExcelUploader(session)

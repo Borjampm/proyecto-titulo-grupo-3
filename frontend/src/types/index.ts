@@ -171,4 +171,6 @@ export interface ExcelImportResult {
   imported: number;
   errors: string[];
   patients?: Patient[];
+  missingCount?: number;
+  missingIds?: string[];
 }

@@ -968,6 +968,8 @@ export async function importSocialScoresFromExcel(file: File): Promise<ExcelImpo
     success: response.status === 'success',
     imported: response.scores_processed || 0,
     errors: response.errors || [],
+    missingCount: response.missing_count || 0,
+    missingIds: response.missing_ids || [],
   };
 }
 

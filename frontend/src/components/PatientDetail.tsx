@@ -36,6 +36,7 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    console.log('Episode ID:', patient.medicalIdentifier);
     loadPatientData();
   }, [patient.id]);
 
@@ -217,36 +218,58 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
         </Card>
       )}
 
-        {/* Risk Factors */}
+      {/* Social Score Section */}
       <Card className="p-6">
-        <h3 className="mb-4">Factores de Riesgo y Score Social</h3>
-        <div className="flex flex-wrap gap-3 mb-4">
-          {patient.socialScore !== null && patient.socialScore !== undefined ? (
-            <Badge 
-              variant="outline" 
-              className={
-                patient.socialScore > 10 
-                  ? 'bg-red-50 text-red-700 border-red-300' 
-                  : patient.socialScore >= 6 
-                    ? 'bg-yellow-50 text-yellow-700 border-yellow-300'
-                    : 'bg-green-50 text-green-700 border-green-300'
-              }
-            >
-              Score Social: {patient.socialScore}
-            </Badge>
-          ) : (
-            <div className="flex flex-col gap-1">
-              <Badge variant="outline" className="bg-gray-50 text-gray-700 border-gray-300">
-                Score Social: N/A
-              </Badge>
-              {patient.socialScoreReason && (
-                <p className="text-xs text-muted-foreground">
-                  Razón: {patient.socialScoreReason}
-                </p>
-              )}
+        <h3 className="mb-4">Score Social</h3>
+        {patient.socialScore !== null && patient.socialScore !== undefined ? (
+          <div className="flex items-center gap-4">
+            <div className={`text-3xl font-bold ${
+              patient.socialScore > 10 
+                ? 'text-red-600' 
+                : patient.socialScore >= 6 
+                  ? 'text-yellow-600'
+                  : 'text-green-600'
+            }`}>
+              {patient.socialScore}
             </div>
-          )}
-          
+            <div>
+              <Badge 
+                variant="outline" 
+                className={
+                  patient.socialScore > 10 
+                    ? 'bg-red-50 text-red-700 border-red-300' 
+                    : patient.socialScore >= 6 
+                      ? 'bg-yellow-50 text-yellow-700 border-yellow-300'
+                      : 'bg-green-50 text-green-700 border-green-300'
+                }
+              >
+                {patient.socialScore > 10 ? 'Alto Riesgo' : patient.socialScore >= 6 ? 'Riesgo Medio' : 'Bajo Riesgo'}
+              </Badge>
+            </div>
+          </div>
+        ) : (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertTriangle className="w-5 h-5 text-gray-500" />
+              <span className="font-medium text-gray-700">Score Social no disponible</span>
+            </div>
+            {patient.socialScoreReason ? (
+              <p className="text-sm text-gray-600">
+                <strong>Motivo:</strong> {patient.socialScoreReason}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No se ha registrado un score social para este paciente.
+              </p>
+            )}
+          </div>
+        )}
+      </Card>
+
+      {/* Risk Factors */}
+      <Card className="p-6">
+        <h3 className="mb-4">Factores de Riesgo</h3>
+        <div className="flex flex-wrap gap-3 mb-4">
           {patient.socialRisk && (
             <Badge className="bg-orange-100 text-orange-800 border-orange-300" variant="outline">
               Riesgo Social Detectado
@@ -264,7 +287,7 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
           )}
         </div>
         
-        {!patient.socialRisk && !patient.financialRisk && patient.daysInStay <= patient.expectedDays && !patient.socialScoreReason && (
+        {!patient.socialRisk && !patient.financialRisk && patient.daysInStay <= patient.expectedDays && (
           <p className="text-muted-foreground">No se han detectado factores de riesgo críticos</p>
         )}
       </Card>

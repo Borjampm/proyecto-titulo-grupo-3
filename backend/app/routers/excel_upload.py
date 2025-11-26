@@ -146,12 +146,14 @@ async def upload_social_scores(
         
         # Upload social scores using the ExcelUploader
         uploader = ExcelUploader(session)
-        scores_processed = await uploader.upload_social_scores_from_excel(tmp_file_path)
+        result = await uploader.upload_social_scores_from_excel(tmp_file_path)
         
         return {
             "status": "success",
-            "message": f"Successfully processed {scores_processed} social score records",
-            "scores_processed": scores_processed,
+            "message": f"Successfully processed {result['count']} social score records",
+            "scores_processed": result['count'],
+            "missing_count": result['missing_count'],
+            "missing_ids": result['missing_ids'],
         }
     
     except Exception as e:
