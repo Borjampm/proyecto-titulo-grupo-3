@@ -112,6 +112,48 @@ async def upload_patients(
         Path(tmp_file_path).unlink(missing_ok=True)
 
 
+@router.post("/upload-gestion-estadia")
+async def upload_gestion_estadia(
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session)
+) -> Dict[str, Any]:
+    """
+    Upload patient and episode data from Gestion Estadía Excel file (UCCC sheet).
+
+    Returns:
+        Dictionary with counts of processed rows
+    """
+    if not file.filename.endswith(('.xlsx', '.xls', '.xlsm')):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Please upload an Excel file (.xlsx or .xls)"
+        )
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_file_path = tmp_file.name
+
+        uploader = ExcelUploader(session)
+        processed = await uploader.upload_gestion_estadia_from_excel(tmp_file_path)
+
+        return {
+            "status": "success",
+            "message": f"Successfully processed {processed} UCCC rows",
+            "processed": processed,
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading Gestion Estadía: {str(e)}"
+        )
+
+    finally:
+        Path(tmp_file_path).unlink(missing_ok=True)
+
+
 @router.post("/upload-all")
 async def upload_all(
     beds_file: UploadFile = File(..., description="Camas NWP1 Excel file"),
