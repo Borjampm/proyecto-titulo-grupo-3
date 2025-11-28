@@ -362,8 +362,9 @@ function transformTaskInstanceToTask(taskInstance: any, episodeId?: string): Tas
 
 /**
  * Transforma eventos del historial de FastAPI a TimelineEvent del frontend
+ * Returns null for events that should be filtered out
  */
-function transformHistoryEventToTimelineEvent(event: any, episodeId: string): TimelineEvent {
+function transformHistoryEventToTimelineEvent(event: any, episodeId: string): TimelineEvent | null {
   let type: TimelineEvent['type'] = 'admission';
   let title = event.description;
   let description = '';
@@ -382,12 +383,30 @@ function transformHistoryEventToTimelineEvent(event: any, episodeId: string): Ti
       break;
     case 'task_created':
       type = 'task-created';
-      title = 'Tarea creada';
-      description = event.metadata?.task_title || event.description;
+      // Use task name as title
+      title = event.metadata?.title || event.metadata?.task_title || 'Nueva tarea';
+      description = event.metadata?.description || '';
       break;
     case 'task_updated':
-      type = 'task-completed';
-      title = 'Tarea actualizada';
+      // Skip initialization events (old_status is null) - these duplicate task_created
+      if (event.metadata?.old_status === null || event.metadata?.old_status === undefined) {
+        return null;
+      }
+      
+      // Use task name as title
+      title = event.metadata?.task_title || 'Tarea';
+      
+      // Determine type based on the new status
+      const newStatus = event.metadata?.new_status?.toUpperCase();
+      if (newStatus === 'COMPLETED') {
+        type = 'task-completed';
+      } else if (newStatus === 'IN_PROGRESS') {
+        type = 'task-updated';
+      } else if (newStatus === 'CANCELLED') {
+        type = 'task-updated';
+      } else {
+        type = 'task-updated';
+      }
       description = event.description;
       break;
     default:
@@ -395,11 +414,11 @@ function transformHistoryEventToTimelineEvent(event: any, episodeId: string): Ti
   }
 
   return {
-    id: `${episodeId}_${event.event_date}`,
+    id: `${episodeId}_${event.event_date}_${Math.random().toString(36).substr(2, 9)}`,
     patientId: episodeId,
     type: type,
     timestamp: event.event_date,
-    author: event.metadata?.user_name || 'Sistema',
+    author: event.metadata?.user_name || event.metadata?.changed_by || 'Sistema',
     role: 'coordinator',
     title: title,
     description: description,
@@ -828,9 +847,9 @@ export async function getPatientTimeline(patientId: string): Promise<TimelineEve
   const endpoint = `/clinical-episodes/${patientId}/history`;
   const response = await apiClient.get<any>(endpoint);
 
-  const events = response.events.map((e: any) =>
-    transformHistoryEventToTimelineEvent(e, patientId)
-  );
+  const events = response.events
+    .map((e: any) => transformHistoryEventToTimelineEvent(e, patientId))
+    .filter((e: TimelineEvent | null): e is TimelineEvent => e !== null);
 
   // Ordenar por timestamp descendente (más reciente primero)
   events.sort((a: TimelineEvent, b: TimelineEvent) =>
