@@ -391,7 +391,9 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                           )}
                           <h4>{task.title}</h4>
                         </div>
-                        <p className="text-muted-foreground mb-2">{task.description}</p>
+                        {task.description && (
+                          <p className="text-muted-foreground mb-2">{task.description}</p>
+                        )}
                         <div className="flex items-center gap-2 flex-wrap">
                           <Badge 
                             variant="outline"
@@ -403,20 +405,41 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                           >
                             Prioridad {task.priority === 'high' ? 'Alta' : task.priority === 'medium' ? 'Media' : 'Baja'}
                           </Badge>
-                          <Badge variant="secondary">
-                            {task.status === 'in-progress' ? 'En Progreso' : 'Pendiente'}
-                          </Badge>
                           {task.assignedTo && (
                             <Badge variant="outline">Asignado a: {task.assignedTo}</Badge>
                           )}
                         </div>
                       </div>
-                      {task.dueDate && (
-                        <div className="text-right shrink-0">
-                          <p className="text-muted-foreground">Vencimiento</p>
-                          <p>{new Date(task.dueDate).toLocaleDateString('es-ES')}</p>
-                        </div>
-                      )}
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        <Select 
+                          value={task.status} 
+                          onValueChange={async (value) => {
+                            try {
+                              await updateTask(task.id, { status: value as any });
+                              toast.success('Estado de tarea actualizado');
+                              loadPatientData();
+                            } catch (error) {
+                              console.error('Error updating task status:', error);
+                              toast.error('Error al actualizar estado de la tarea');
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="w-[140px]">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pending">Pendiente</SelectItem>
+                            <SelectItem value="in-progress">En Progreso</SelectItem>
+                            <SelectItem value="completed">Completada</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        {task.dueDate && (
+                          <div className="text-right">
+                            <p className="text-muted-foreground text-sm">Vencimiento</p>
+                            <p className="text-sm">{new Date(task.dueDate).toLocaleDateString('es-ES')}</p>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))

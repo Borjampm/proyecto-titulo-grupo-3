@@ -8,7 +8,10 @@ import {
   Calendar,
   ClipboardList,
   Activity,
-  User
+  User,
+  PlayCircle,
+  XCircle,
+  PauseCircle
 } from 'lucide-react';
 import { Badge } from './ui/badge';
 import { cn } from './ui/utils';
@@ -23,14 +26,23 @@ export function Timeline({ events }: TimelineProps) {
     new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
   );
 
-  const getEventIcon = (type: TimelineEvent['type']) => {
+  const getEventIcon = (type: TimelineEvent['type'], metadata?: TimelineEvent['metadata']) => {
     switch (type) {
       case 'task-created':
         return ClipboardList;
       case 'task-completed':
         return CheckCircle;
       case 'task-updated':
-        return Circle;
+        // Different icons based on new status
+        const newStatus = metadata?.new_status?.toUpperCase();
+        if (newStatus === 'IN_PROGRESS') {
+          return PlayCircle;
+        } else if (newStatus === 'CANCELLED') {
+          return XCircle;
+        } else if (newStatus === 'PENDING') {
+          return PauseCircle;
+        }
+        return Activity;
       case 'document':
         return Upload;
       case 'alert':
@@ -47,11 +59,20 @@ export function Timeline({ events }: TimelineProps) {
   const getEventColor = (type: TimelineEvent['type'], metadata?: TimelineEvent['metadata']) => {
     switch (type) {
       case 'task-created':
-        return 'text-purple-600 bg-purple-50 border-purple-200';
+        return 'text-violet-600 bg-violet-50 border-violet-300';
       case 'task-completed':
-        return 'text-green-600 bg-green-50 border-green-200';
+        return 'text-emerald-700 bg-emerald-100 border-emerald-400';
       case 'task-updated':
-        return 'text-yellow-600 bg-yellow-50 border-yellow-200';
+        // Different colors based on new status
+        const newStatus = metadata?.new_status?.toUpperCase();
+        if (newStatus === 'IN_PROGRESS') {
+          return 'text-blue-600 bg-blue-50 border-blue-300';
+        } else if (newStatus === 'CANCELLED') {
+          return 'text-rose-600 bg-rose-50 border-rose-300';
+        } else if (newStatus === 'PENDING') {
+          return 'text-slate-600 bg-slate-50 border-slate-300';
+        }
+        return 'text-amber-600 bg-amber-50 border-amber-300';
       case 'document':
         return 'text-indigo-600 bg-indigo-50 border-indigo-200';
       case 'alert':
@@ -67,14 +88,23 @@ export function Timeline({ events }: TimelineProps) {
     }
   };
 
-  const getEventTypeLabel = (type: TimelineEvent['type']) => {
+  const getEventTypeLabel = (type: TimelineEvent['type'], metadata?: TimelineEvent['metadata']) => {
     switch (type) {
       case 'task-created':
         return 'Tarea Creada';
       case 'task-completed':
         return 'Tarea Completada';
       case 'task-updated':
-        return 'Tarea Actualizada';
+        // Determine label based on new status
+        const newStatus = metadata?.new_status?.toUpperCase();
+        if (newStatus === 'IN_PROGRESS') {
+          return 'En Progreso';
+        } else if (newStatus === 'CANCELLED') {
+          return 'Cancelada';
+        } else if (newStatus === 'PENDING') {
+          return 'Pendiente';
+        }
+        return 'Actualizada';
       case 'document':
         return 'Documento';
       case 'alert':
@@ -103,6 +133,45 @@ export function Timeline({ events }: TimelineProps) {
       default:
         return '';
     }
+  };
+
+  const formatStatusLabel = (status: string): string => {
+    const statusMap: { [key: string]: string } = {
+      'PENDING': 'Pendiente',
+      'IN_PROGRESS': 'En Progreso',
+      'COMPLETED': 'Completada',
+      'CANCELLED': 'Cancelada',
+      'OVERDUE': 'Vencida',
+      'pending': 'Pendiente',
+      'in_progress': 'En Progreso',
+      'completed': 'Completada',
+      'cancelled': 'Cancelada',
+      'overdue': 'Vencida',
+    };
+    return statusMap[status] || status;
+  };
+
+  const formatDescription = (description: string, type: TimelineEvent['type']): string => {
+    // Handle task status change messages
+    const statusChangeMatch = description.match(/Task '(.+)' status changed from (\w+) to (\w+)/i);
+    if (statusChangeMatch) {
+      const [, taskName, fromStatus, toStatus] = statusChangeMatch;
+      return `Estado de tarea "${taskName}" cambió de ${formatStatusLabel(fromStatus)} a ${formatStatusLabel(toStatus)}`;
+    }
+
+    // Handle "Status updated from X to Y" messages
+    const statusUpdatedMatch = description.match(/Status updated from (\w+) to (\w+)/i);
+    if (statusUpdatedMatch) {
+      const [, fromStatus, toStatus] = statusUpdatedMatch;
+      return `Estado actualizado de ${formatStatusLabel(fromStatus)} a ${formatStatusLabel(toStatus)}`;
+    }
+
+    // Handle "Task created" messages
+    if (description.toLowerCase().includes('task created')) {
+      return 'Tarea creada';
+    }
+
+    return description;
   };
 
   const formatTimestamp = (timestamp: string) => {
@@ -147,7 +216,7 @@ export function Timeline({ events }: TimelineProps) {
   return (
     <div className="space-y-4">
       {sortedEvents.map((event, index) => {
-        const Icon = getEventIcon(event.type);
+        const Icon = getEventIcon(event.type, event.metadata);
         const colorClasses = getEventColor(event.type, event.metadata);
         const timestamp = formatTimestamp(event.timestamp);
         const isLast = index === sortedEvents.length - 1;
@@ -171,7 +240,7 @@ export function Timeline({ events }: TimelineProps) {
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-1">
                       <Badge variant="outline" className={cn('text-xs', colorClasses)}>
-                        {getEventTypeLabel(event.type)}
+                        {getEventTypeLabel(event.type, event.metadata)}
                       </Badge>
                       {event.metadata?.taskPriority && (
                         <Badge 
@@ -188,7 +257,7 @@ export function Timeline({ events }: TimelineProps) {
                       )}
                     </div>
                     <h4 className="mb-1">{event.title}</h4>
-                    <p className="text-muted-foreground">{event.description}</p>
+                    <p className="text-muted-foreground">{formatDescription(event.description, event.type)}</p>
                   </div>
                   
                   <div className="text-right shrink-0">

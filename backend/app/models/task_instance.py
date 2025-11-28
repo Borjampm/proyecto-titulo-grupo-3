@@ -3,7 +3,7 @@ from sqlalchemy import String, DateTime, Date, Integer, ForeignKey, Enum as SQLE
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 import uuid
 import enum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 from app.db import Base
 
 if TYPE_CHECKING:
@@ -14,11 +14,11 @@ if TYPE_CHECKING:
 
 class TaskStatus(enum.Enum):
     """Enum for task instance status"""
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
-    OVERDUE = "overdue"
+    PENDING = "PENDING"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+    OVERDUE = "OVERDUE"
 
 
 class TaskInstance(Base):
@@ -39,8 +39,9 @@ class TaskInstance(Base):
         String(500),
         nullable=False
     )
-    description: Mapped[str] = mapped_column(
-        String(2000)
+    description: Mapped[Optional[str]] = mapped_column(
+        String(2000),
+        nullable=True
     )
     due_date: Mapped[Date] = mapped_column(
         Date,

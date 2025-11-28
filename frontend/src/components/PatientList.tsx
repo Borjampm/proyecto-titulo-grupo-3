@@ -61,8 +61,22 @@ export function PatientList({
       if (filterRisk !== 'all') filters.riskLevel = filterRisk as any;
       if (filterCaseStatus !== 'all') filters.caseStatus = filterCaseStatus as any;
       
-      const response = await getClinicalEpisodes(filters);
-      setPatients(response.data);
+      // Load all patients by paginating through all pages
+      const allPatients: Patient[] = [];
+      let page = 1;
+      const pageSize = 100;
+      
+      while (true) {
+        const response = await getClinicalEpisodes({ ...filters, page, pageSize });
+        allPatients.push(...response.data);
+        
+        if (response.data.length < pageSize || page >= (response.pagination?.totalPages || 1)) {
+          break;
+        }
+        page++;
+      }
+      
+      setPatients(allPatients);
     } catch (error) {
       console.error('Error loading patients:', error);
     } finally {

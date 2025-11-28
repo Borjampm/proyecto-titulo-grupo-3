@@ -4,10 +4,10 @@ import { Button } from './ui/button';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { importPatientsFromExcel, importSocialScoresFromExcel } from '../lib/api-fastapi';
+import { importSocialScoresFromExcel, importBedsFromExcel, importGestionEstadiaFromExcel } from '../lib/api-fastapi';
 import { toast } from 'sonner';
 
-type ExcelFileType = 'default' | 'score_social';
+type ExcelFileType = 'score_social' | 'beds' | 'gestion_estadia';
 
 export function DataUpload() {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -18,7 +18,7 @@ export function DataUpload() {
     missingCount?: number; 
     missingIds?: string[] 
   } | null>(null);
-  const [fileType, setFileType] = useState<ExcelFileType>('default');
+  const [fileType, setFileType] = useState<ExcelFileType>('score_social');
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -28,9 +28,23 @@ export function DataUpload() {
       
       try {
         // Use different endpoint based on file type
-        const result = fileType === 'score_social' 
-          ? await importSocialScoresFromExcel(file)
-          : await importPatientsFromExcel(file);
+        let result;
+        let successMessage: string;
+        
+        switch (fileType) {
+          case 'score_social':
+            result = await importSocialScoresFromExcel(file);
+            successMessage = `${result.imported} registros de score social importados exitosamente`;
+            break;
+          case 'beds':
+            result = await importBedsFromExcel(file);
+            successMessage = `${result.imported} camas importadas exitosamente`;
+            break;
+          case 'gestion_estadia':
+            result = await importGestionEstadiaFromExcel(file);
+            successMessage = `${result.imported} registros de gestión estadía importados exitosamente`;
+            break;
+        }
         
         setUploadResult({ 
           imported: result.imported, 
@@ -39,10 +53,6 @@ export function DataUpload() {
           missingIds: result.missingIds
         });
         setUploadStatus('success');
-        
-        const successMessage = fileType === 'score_social'
-          ? `${result.imported} registros de score social importados exitosamente`
-          : `${result.imported} pacientes importados exitosamente`;
         toast.success(successMessage);
         
         if (result.missingCount && result.missingCount > 0) {
@@ -69,7 +79,7 @@ export function DataUpload() {
       <div>
         <h2>Carga de Datos</h2>
         <p className="text-muted-foreground mt-1">
-          Importar archivos Excel o CSV con información de pacientes
+          Importar archivos Excel con información del hospital
         </p>
       </div>
 
@@ -140,8 +150,9 @@ export function DataUpload() {
                 <SelectValue placeholder="Selecciona el tipo de archivo" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="default">Default</SelectItem>
                 <SelectItem value="score_social">Score Social</SelectItem>
+                <SelectItem value="beds">Camas</SelectItem>
+                <SelectItem value="gestion_estadia">Gestión Estadía</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -149,11 +160,11 @@ export function DataUpload() {
           <div className="border-2 border-dashed rounded-lg p-8 text-center">
             <FileSpreadsheet className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground mb-4">
-              Arrastra un archivo Excel o CSV aquí
+              Arrastra un archivo Excel aquí
             </p>
             <input
               type="file"
-              accept=".xlsx,.xls,.csv"
+              accept=".xlsx,.xls,.xlsm"
               onChange={handleFileChange}
               className="hidden"
               id="file-upload"
@@ -167,13 +178,13 @@ export function DataUpload() {
             </Button>
           </div>
           <p className="text-muted-foreground mt-4">
-            Formatos aceptados: .xlsx, .xls, .csv
+            Formatos aceptados: .xlsx, .xls, .xlsm
           </p>
         </Card>
 
         <Card className="p-6">
           <h3 className="mb-4">Formato Esperado</h3>
-          {fileType === 'score_social' ? (
+          {fileType === 'score_social' && (
             <>
               <p className="text-muted-foreground mb-4">
                 El archivo debe contener una hoja &quot;Data Casos&quot; con las siguientes columnas:
@@ -189,24 +200,35 @@ export function DataUpload() {
                 Los registros sin puntaje se mostrarán como N/A con su motivo correspondiente.
               </p>
             </>
-          ) : (
+          )}
+          {fileType === 'beds' && (
             <>
               <p className="text-muted-foreground mb-4">
-                El archivo debe contener las siguientes columnas:
+                El archivo debe contener una hoja &quot;Camas&quot; con información de camas hospitalarias.
               </p>
               <ul className="space-y-2 text-muted-foreground">
-                <li>• Nombre del paciente</li>
-                <li>• Edad</li>
-                <li>• Fecha de ingreso</li>
-                <li>• Servicio</li>
-                <li>• Diagnóstico</li>
-                <li>• GRD</li>
-                <li>• Días esperados de estadía</li>
-                <li>• Médico responsable</li>
+                <li>• Información de camas del hospital</li>
+                <li>• Ubicación y servicio asociado</li>
+                <li>• Estado de disponibilidad</li>
               </ul>
-              <Button variant="link" className="mt-4 p-0">
-                Descargar plantilla de ejemplo
-              </Button>
+              <p className="text-muted-foreground mt-4 text-sm">
+                Archivo esperado: &quot;Camas NWP1&quot; con hoja &quot;Camas&quot;.
+              </p>
+            </>
+          )}
+          {fileType === 'gestion_estadia' && (
+            <>
+              <p className="text-muted-foreground mb-4">
+                El archivo debe contener una hoja &quot;UCCC&quot; con datos de pacientes y episodios.
+              </p>
+              <ul className="space-y-2 text-muted-foreground">
+                <li>• Datos de pacientes</li>
+                <li>• Información de episodios clínicos</li>
+                <li>• Registros de estadía hospitalaria</li>
+              </ul>
+              <p className="text-muted-foreground mt-4 text-sm">
+                Formatos aceptados: .xlsx, .xls, .xlsm
+              </p>
             </>
           )}
         </Card>

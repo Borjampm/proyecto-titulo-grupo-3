@@ -8,11 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class TaskStatus(str, Enum):
     """Enum for task instance status"""
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
-    OVERDUE = "overdue"
+    PENDING = "PENDING"
+    IN_PROGRESS = "IN_PROGRESS"
+    COMPLETED = "COMPLETED"
+    CANCELLED = "CANCELLED"
+    OVERDUE = "OVERDUE"
 
 
 class TaskInstanceBase(BaseModel):
