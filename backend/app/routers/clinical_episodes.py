@@ -488,7 +488,7 @@ async def get_episode_history(
                 }
             ))
     
-    # 5. Social score recording events
+    # 5. Social score recording events (only show if there's an actual score)
     social_scores_result = await session.execute(
         select(SocialScoreHistory)
         .where(SocialScoreHistory.episode_id == episode_id)
@@ -497,21 +497,23 @@ async def get_episode_history(
     social_scores = social_scores_result.scalars().all()
     
     for score in social_scores:
-        description = f"Score social calculado: {score.score}"
-        if score.recorded_by:
-            description += f" by {score.recorded_by}"
-        
-        events.append(HistoryEvent(
-            event_type=HistoryEventType.SOCIAL_SCORE_RECORDED,
-            event_date=score.recorded_at,
-            description=description,
-            metadata={
-                "score_id": str(score.id),
-                "score": score.score,
-                "recorded_by": score.recorded_by,
-                "notes": score.notes
-            }
-        ))
+        # Only add to timeline if there's an actual score value
+        if score.score is not None:
+            description = f"Score social calculado: {score.score}"
+            if score.recorded_by:
+                description += f" por {score.recorded_by}"
+            
+            events.append(HistoryEvent(
+                event_type=HistoryEventType.SOCIAL_SCORE_RECORDED,
+                event_date=score.recorded_at,
+                description=description,
+                metadata={
+                    "score_id": str(score.id),
+                    "score": score.score,
+                    "recorded_by": score.recorded_by,
+                    "notes": score.notes
+                }
+            ))
     
     # Sort events by date
     events.sort(key=lambda x: x.event_date)
