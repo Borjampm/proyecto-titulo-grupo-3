@@ -54,6 +54,35 @@ def test_parse_bed_row_basic():
     assert parsed["active"] is True
 
 
+def test_parse_bed_row_blocked_variants():
+    uploader = ExcelUploader(db_session=None)
+
+    for blocked_val in ["SI", "S", "YES", "Y", "TRUE", "1"]:
+        row = pd.Series({"CAMA": "300B", "CAMA_BLOQUEADA": blocked_val})
+        parsed = uploader._parse_bed_row(row)
+        # Blocked values should mark available=False
+        assert parsed is not None
+        assert parsed["room"] == "300B"
+        assert parsed["available"] is False
+
+
+def test_parse_patient_data_birthdate_and_generated_name():
+    uploader = ExcelUploader(db_session=None)
+
+    # Birth date as string
+    row = pd.Series({"Episodio / Estadía": "EPI-007", "RUT": None, "Nombre": None, "Fecha de nacimiento": "1985-04-12"})
+    parsed = uploader._parse_patient_data(row)
+    assert parsed is not None
+    assert isinstance(parsed["birth_date"], date)
+
+    # Nombre with single name
+    row2 = pd.Series({"Episodio / Estadía": "EPI-008", "RUT": None, "Nombre": "Mononym", "Fecha de nacimiento": None})
+    parsed2 = uploader._parse_patient_data(row2)
+    assert parsed2 is not None
+    assert parsed2["first_name"] == "Mononym"
+    assert parsed2["last_name"] == ""
+
+
 def test_parse_patient_data_generated_and_real():
     uploader = ExcelUploader(db_session=None)
 
@@ -91,6 +120,41 @@ def test_parse_patient_information_handles_types_and_missing():
     assert "SomeInt" in info and isinstance(info["SomeInt"], int)
     assert "SomeDate" in info and isinstance(info["SomeDate"], str)
     assert "Empty" in info and info["Empty"] is None
+
+
+def test_parse_clinical_episode_data_discharge_timestamp_and_unknown():
+    uploader = ExcelUploader(db_session=None)
+
+    # discharge as pandas Timestamp
+    row = pd.Series({
+        "Episodio / Estadía": "EPI-11",
+        "Fe.admisión": pd.Timestamp("2025-09-20"),
+        "Fecha del alta": pd.Timestamp("2025-09-25"),
+        "Estado de alta": None,
+    })
+
+    episode = uploader._parse_clinical_episode_data(row)
+    assert episode["expected_discharge"] == date(2025, 9, 25)
+    # When status missing but discharge exists -> DISCHARGED
+    assert episode["status"] == EpisodeStatus.DISCHARGED
+
+
+def test_parse_clinical_episode_information_puntaje_and_valor_parcial():
+    uploader = ExcelUploader(db_session=None)
+    row = pd.Series({
+        "Encuesta": None,
+        "Motivo": None,
+        "Puntaje": "15",
+        " Encuestadora": None,
+        " Valor Parcial ": "200.5",
+    })
+
+    records = uploader._parse_clinical_episode_information(row)
+    # find puntaje and valor_parcial records
+    found_puntaje = any(r["title"] == "Información de Encuesta" and r["value"].get("puntaje") == 15.0 for r in records)
+    found_valor = any(r["title"] == "Valor Parcial" and (r["value"].get("valor_parcial") == 200.5) for r in records)
+    assert found_puntaje
+    assert found_valor
 
 
 def test_parse_clinical_episode_data_and_status_mapping():
