@@ -758,8 +758,20 @@ class ExcelUploader:
             # Episode identifier - prefer explicit Episodio column
             episode_identifier = None
             eps = row.get("Episodio:") or row.get("Episodio") or row.get("Episodio / Estadía")
+            if eps is None:
+                # Try to find any column containing 'episodio' in its name
+                for col in row.index:
+                    if isinstance(col, str) and 'episodio' in col.lower():
+                        eps = row.get(col)
+                        logger.debug(f"Found episode column '{col}' with value: {eps}")
+                        break
             if not pd.isna(eps):
-                episode_identifier = str(eps).strip()
+                # Convert to string, handle floats by removing .0
+                eps_str = str(eps).strip()
+                if eps_str.endswith('.0'):
+                    eps_str = eps_str[:-2]
+                episode_identifier = eps_str
+                logger.debug(f"Parsed episode_identifier: {episode_identifier}")
 
             return {
                 "admission_at": admission_at,
@@ -1608,16 +1620,36 @@ class ExcelUploader:
         """
         Build a map of identifiers to episode IDs.
         
-        This method creates a lookup map using two sources:
-        1. Episode identifiers stored in ClinicalEpisodeInformation (from "Episodio / Estadía")
-        2. Patient medical identifiers (for manually created patients)
+        This method creates a lookup map using three sources:
+        1. Episode identifiers stored directly on ClinicalEpisode.episode_identifier (new approach)
+        2. Episode identifiers stored in ClinicalEpisodeInformation (legacy)
+        3. Patient medical identifiers (for manually created patients)
         
         This allows matching social scores to episodes whether they were imported
         from Excel or created manually.
         """
         episode_map = {}
         
-        # 1. Get episode identifiers from ClinicalEpisodeInformation
+        def normalize_identifier(identifier: str) -> str:
+            """Normalize identifier by removing trailing .0 from floats."""
+            s = str(identifier).strip()
+            if s.endswith('.0'):
+                s = s[:-2]
+            return s
+        
+        # 1. Get episode identifiers directly from ClinicalEpisode model (new approach)
+        stmt = select(ClinicalEpisode).where(ClinicalEpisode.episode_identifier.isnot(None))
+        result = await self.db.execute(stmt)
+        episodes = result.scalars().all()
+        
+        for episode in episodes:
+            if episode.episode_identifier:
+                identifier = normalize_identifier(episode.episode_identifier)
+                episode_map[identifier] = episode.id
+        
+        logger.info(f"Found {len(episode_map)} episodes with direct episode_identifier")
+        
+        # 2. Get episode identifiers from ClinicalEpisodeInformation (legacy)
         stmt = select(ClinicalEpisodeInformation).where(
             ClinicalEpisodeInformation.title == "Episodio / Estadía"
         )
@@ -1628,9 +1660,11 @@ class ExcelUploader:
             if info.value and "episode_identifier" in info.value:
                 identifier = info.value["episode_identifier"]
                 if identifier:
-                    episode_map[str(identifier)] = info.episode_id
+                    normalized = normalize_identifier(identifier)
+                    if normalized not in episode_map:
+                        episode_map[normalized] = info.episode_id
         
-        # 2. Also map by patient medical_identifier for manually created patients
+        # 3. Also map by patient medical_identifier for manually created patients
         # Get all episodes with their associated patients
         stmt = select(ClinicalEpisode, Patient).join(Patient)
         result = await self.db.execute(stmt)
@@ -1639,10 +1673,11 @@ class ExcelUploader:
         for episode, patient in episode_patient_pairs:
             if patient.medical_identifier:
                 # Only add if not already in the map (episode identifier takes precedence)
-                if str(patient.medical_identifier) not in episode_map:
-                    episode_map[str(patient.medical_identifier)] = episode.id
+                normalized = normalize_identifier(patient.medical_identifier)
+                if normalized not in episode_map:
+                    episode_map[normalized] = episode.id
         
-        logger.info(f"Episode map contains {len(episode_map)} entries (from episode info and patient medical identifiers)")
+        logger.info(f"Episode map contains {len(episode_map)} entries (from episode_identifier, episode info, and patient medical identifiers)")
         
         return episode_map
 
@@ -1664,7 +1699,10 @@ class ExcelUploader:
                 logger.warning("Skipping row with missing Episodio / Estadía")
                 return None
             
+            # Normalize identifier by removing trailing .0 from floats
             episode_identifier = str(episodio_raw).strip()
+            if episode_identifier.endswith('.0'):
+                episode_identifier = episode_identifier[:-2]
             
             # Parse score (Puntaje) - can be null
             puntaje_raw = row.get("Puntaje")

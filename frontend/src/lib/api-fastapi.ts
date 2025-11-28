@@ -850,26 +850,66 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     return mockDashboardStats;
   }
 
-  // Obtener todos los episodios para calcular estadísticas
-  const response = await getClinicalEpisodes({ page: 1, pageSize: 100 });
-  const patients = response.data;
+  // Obtener todos los episodios para calcular estadísticas (paginar si hay más de 100)
+  const allEpisodes: Patient[] = [];
+  let page = 1;
+  const pageSize = 100;
+  
+  // Fetch all pages
+  while (true) {
+    const response = await getClinicalEpisodes({ page, pageSize });
+    allEpisodes.push(...response.data);
+    
+    if (response.data.length < pageSize || page >= (response.pagination?.totalPages || 1)) {
+      break;
+    }
+    page++;
+  }
+  
+  const episodes = allEpisodes;
 
-  const totalPatients = patients.length;
-  const highRiskPatients = patients.filter(p => p.riskLevel === 'high').length;
-  const mediumRiskPatients = patients.filter(p => p.riskLevel === 'medium').length;
-  const lowRiskPatients = patients.filter(p => p.riskLevel === 'low').length;
+  // Agrupar episodios por paciente único (usando patientId)
+  // Para cada paciente, usar el episodio más reciente (mayor score social si hay empate)
+  const patientMap = new Map<string, typeof episodes[0]>();
+  
+  for (const episode of episodes) {
+    const patientId = episode.patientId || episode.id;
+    const existing = patientMap.get(patientId);
+    
+    if (!existing) {
+      patientMap.set(patientId, episode);
+    } else {
+      // Mantener el episodio con mayor días de estadía (más reciente/activo)
+      // o con score social si el actual tiene y el existente no
+      const existingHasScore = existing.socialScore !== null && existing.socialScore !== undefined;
+      const currentHasScore = episode.socialScore !== null && episode.socialScore !== undefined;
+      
+      if (currentHasScore && !existingHasScore) {
+        patientMap.set(patientId, episode);
+      } else if (episode.daysInStay > existing.daysInStay) {
+        patientMap.set(patientId, episode);
+      }
+    }
+  }
+  
+  const uniquePatients = Array.from(patientMap.values());
+  const totalPatients = uniquePatients.length;
+  
+  const highRiskPatients = uniquePatients.filter(p => p.riskLevel === 'high').length;
+  const mediumRiskPatients = uniquePatients.filter(p => p.riskLevel === 'medium').length;
+  const lowRiskPatients = uniquePatients.filter(p => p.riskLevel === 'low').length;
 
   // Calcular promedio de días de estadía
-  const totalDays = patients.reduce((sum, p) => sum + p.daysInStay, 0);
+  const totalDays = uniquePatients.reduce((sum, p) => sum + p.daysInStay, 0);
   const averageStayDays = totalPatients > 0 ? Math.round(totalDays / totalPatients) : 0;
 
   // Calcular desviaciones (pacientes con días de estadía mayor a los esperados)
-  const deviations = patients.filter(p => p.daysInStay > p.expectedDays).length;
+  const deviations = uniquePatients.filter(p => p.daysInStay > p.expectedDays).length;
 
-  // Calcular estadísticas de riesgo social
-  const highSocialRisk = patients.filter(p => (p.socialScore ?? -1) > 10).length;
-  const mediumSocialRisk = patients.filter(p => (p.socialScore ?? -1) >= 6 && (p.socialScore ?? -1) <= 10).length;
-  const lowSocialRisk = patients.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore <= 5).length;
+  // Calcular estadísticas de riesgo social (solo pacientes únicos)
+  const highSocialRisk = uniquePatients.filter(p => (p.socialScore ?? -1) > 10).length;
+  const mediumSocialRisk = uniquePatients.filter(p => (p.socialScore ?? -1) >= 6 && (p.socialScore ?? -1) <= 10).length;
+  const lowSocialRisk = uniquePatients.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore <= 5).length;
 
   return {
     totalPatients,
@@ -970,6 +1010,44 @@ export async function importSocialScoresFromExcel(file: File): Promise<ExcelImpo
     errors: response.errors || [],
     missingCount: response.missing_count || 0,
     missingIds: response.missing_ids || [],
+  };
+}
+
+/**
+ * POST /excel/upload-beds
+ * Importa datos de camas desde un archivo Excel "Camas NWP1"
+ * 
+ * Expects a file with "Camas" sheet containing bed information.
+ */
+export async function importBedsFromExcel(file: File): Promise<ExcelImportResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await apiClient.uploadFile<any>('/excel/upload-beds', formData);
+
+  return {
+    success: response.status === 'success',
+    imported: response.beds_created || 0,
+    errors: response.errors || [],
+  };
+}
+
+/**
+ * POST /excel/upload-gestion-estadia
+ * Importa datos de pacientes y episodios desde archivo Gestión Estadía
+ * 
+ * Expects a file with "UCCC" sheet containing patient and episode data.
+ */
+export async function importGestionEstadiaFromExcel(file: File): Promise<ExcelImportResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await apiClient.uploadFile<any>('/excel/upload-gestion-estadia', formData);
+
+  return {
+    success: response.status === 'success',
+    imported: response.processed || 0,
+    errors: response.errors || [],
   };
 }
 

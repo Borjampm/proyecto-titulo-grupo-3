@@ -131,7 +131,7 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
 
           <Card 
             className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [5, 10] })}
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [6, 10] })}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -144,7 +144,7 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
 
           <Card 
             className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [0, 4] })}
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [0, 5] })}
           >
             <div className="flex items-center justify-between">
               <div>
