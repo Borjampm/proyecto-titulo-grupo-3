@@ -76,7 +76,7 @@ export interface Task {
   id: string;
   patientId: string;
   title: string;
-  description: string;
+  description?: string | null;
   status: TaskStatus;
   priority: TaskPriority;
   assignedTo: string;

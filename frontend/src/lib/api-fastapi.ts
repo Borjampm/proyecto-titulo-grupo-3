@@ -227,11 +227,15 @@ function calculateDaysInStay(admissionDate: string, dischargeDate?: string | nul
  */
 function mapTaskStatus(status: string): 'pending' | 'in-progress' | 'completed' {
   const statusMap: { [key: string]: 'pending' | 'in-progress' | 'completed' } = {
+    'PENDING': 'pending',
+    'IN_PROGRESS': 'in-progress',
+    'COMPLETED': 'completed',
+    'CANCELLED': 'completed', // Tratamos cancelled como completed
+    'OVERDUE': 'pending', // Tratamos overdue como pending
+    // Also handle lowercase for backwards compatibility
     'pending': 'pending',
     'in_progress': 'in-progress',
     'completed': 'completed',
-    'cancelled': 'completed', // Tratamos cancelled como completed
-    'overdue': 'pending', // Tratamos overdue como pending
   };
   return statusMap[status] || 'pending';
 }
@@ -241,11 +245,11 @@ function mapTaskStatus(status: string): 'pending' | 'in-progress' | 'completed' 
  */
 function mapTaskStatusToBackend(status: string): string {
   const statusMap: { [key: string]: string } = {
-    'pending': 'pending',
-    'in-progress': 'in_progress',
-    'completed': 'completed',
+    'pending': 'PENDING',
+    'in-progress': 'IN_PROGRESS',
+    'completed': 'COMPLETED',
   };
-  return statusMap[status] || 'pending';
+  return statusMap[status] || 'PENDING';
 }
 
 /**
@@ -345,7 +349,7 @@ function transformTaskInstanceToTask(taskInstance: any, episodeId?: string): Tas
     id: taskInstance.id,
     patientId: episodeId || taskInstance.episode_id,
     title: taskInstance.title,
-    description: taskInstance.description || '',
+    description: taskInstance.description ?? null,
     status: mapTaskStatus(taskInstance.status),
     priority: mapPriority(taskInstance.priority),
     assignedTo: 'Sin asignar', // TODO: Implementar cuando esté disponible
