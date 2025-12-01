@@ -1,4 +1,4 @@
-export type RiskLevel = 'low' | 'medium' | 'high';
+export type RiskLevel = 'low' | 'medium' | 'high' | 'unknown';
 export type PatientStatus = 'active' | 'pending-discharge' | 'discharged';
 export type CaseStatus = 'open' | 'closed';
 export type UserRole = 'coordinator' | 'social-worker' | 'analyst' | 'chief' | 'clinical-service';
@@ -16,7 +16,7 @@ export interface Patient {
   prevision?: string; // Previsión de salud (FONASA, ISAPRE, etc.)
   contactNumber?: string; // Número de contacto
   daysInStay: number;
-  expectedDays: number;
+  expectedDays: number | null; // null when no GRD data available
   riskLevel: RiskLevel;
   socialRisk: boolean;
   financialRisk: boolean;

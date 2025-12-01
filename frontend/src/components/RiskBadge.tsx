@@ -1,6 +1,6 @@
 import { RiskLevel } from '../types';
 import { Badge } from './ui/badge';
-import { AlertCircle, AlertTriangle, CheckCircle } from 'lucide-react';
+import { AlertCircle, AlertTriangle, CheckCircle, HelpCircle } from 'lucide-react';
 
 interface RiskBadgeProps {
   level: RiskLevel;
@@ -23,6 +23,11 @@ export function RiskBadge({ level, showIcon = true }: RiskBadgeProps) {
       label: 'Bajo Riesgo',
       className: 'bg-green-100 text-green-800 border-green-300',
       icon: CheckCircle
+    },
+    unknown: {
+      label: 'Sin GRD',
+      className: 'bg-gray-100 text-gray-600 border-gray-300',
+      icon: HelpCircle
     }
   };
 

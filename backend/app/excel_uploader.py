@@ -1783,6 +1783,177 @@ class ExcelUploader:
         logger.info(f"Created social score for episode {episode_id}: score={score_data.get('score')}, reason={score_data.get('no_score_reason')}")
         return social_score
 
+    # ==================== GRD DATA UPLOAD ====================
+
+    async def upload_grd_from_excel(self, excel_path: str | Path) -> Dict[str, Any]:
+        """
+        Upload GRD (expected stay days) data from "egresos 2024-2025" sheet.
+
+        This method:
+        - Reads the "egresos 2024-2025" sheet
+        - Extracts: Episodio CMBD (episode identifier), Estancia Norma GRD (expected days)
+        - Updates the grd_expected_days field on matching ClinicalEpisode records
+
+        Args:
+            excel_path: Path to the Excel file with GRD data
+
+        Returns:
+            Dictionary with upload statistics:
+            - count: Number of episodes updated with GRD data
+            - missing_count: Number of records where episode was not found
+            - missing_ids: List of episode identifiers that were not found
+        """
+        logger.info(f"Reading GRD data from {excel_path}")
+
+        try:
+            # Try to read the sheet - handle case variations
+            sheet_name = "egresos 2024-2025"
+            try:
+                df = pd.read_excel(excel_path, sheet_name=sheet_name)
+            except ValueError:
+                # Try to find a similar sheet name
+                xl = pd.ExcelFile(excel_path)
+                available_sheets = xl.sheet_names
+                logger.info(f"Available sheets: {available_sheets}")
+                
+                # Look for a matching sheet
+                matching_sheet = None
+                for s in available_sheets:
+                    if "egreso" in s.lower() or "2024" in s or "2025" in s:
+                        matching_sheet = s
+                        break
+                
+                if matching_sheet:
+                    logger.info(f"Using sheet: {matching_sheet}")
+                    df = pd.read_excel(excel_path, sheet_name=matching_sheet)
+                else:
+                    raise ValueError(f"Sheet '{sheet_name}' not found. Available sheets: {available_sheets}")
+            
+            logger.info(f"Found {len(df)} rows in GRD sheet")
+            logger.info(f"Columns: {list(df.columns)}")
+
+            # Normalize column names for flexible matching
+            col_map = {}
+            for col in df.columns:
+                if isinstance(col, str):
+                    norm = self._normalize_col_name(col)
+                    col_map[norm] = col
+
+            # Find the episode identifier column (Episodio CMBD)
+            episode_col = None
+            for candidates in [["episodio cmbd", "episodio", "episodiocmbd", "cmbd"]]:
+                for c in candidates:
+                    if c in col_map:
+                        episode_col = col_map[c]
+                        break
+                if episode_col:
+                    break
+            
+            if not episode_col:
+                # Try to find any column with "episodio" in name
+                for norm, orig in col_map.items():
+                    if "episodio" in norm:
+                        episode_col = orig
+                        break
+            
+            if not episode_col:
+                raise ValueError(f"Could not find episode identifier column. Available columns: {list(df.columns)}")
+            
+            logger.info(f"Using episode column: {episode_col}")
+
+            # Find the GRD expected days column (Estancia Norma GRD)
+            grd_col = None
+            for candidates in [["estancia norma grd", "estancianormagrd", "norma grd", "grd", "estancia norma"]]:
+                for c in candidates:
+                    if c in col_map:
+                        grd_col = col_map[c]
+                        break
+                if grd_col:
+                    break
+            
+            if not grd_col:
+                # Try to find any column with "estancia" or "norma" or "grd" in name
+                for norm, orig in col_map.items():
+                    if "estancia" in norm or "norma" in norm or "grd" in norm:
+                        grd_col = orig
+                        break
+            
+            if not grd_col:
+                raise ValueError(f"Could not find GRD expected days column. Available columns: {list(df.columns)}")
+            
+            logger.info(f"Using GRD column: {grd_col}")
+
+            # Build episode identifier map
+            episode_map = await self._build_episode_identifier_map()
+            logger.info(f"Built episode map with {len(episode_map)} entries")
+
+            updated_count = 0
+            missing_ids = []
+
+            for idx, row in df.iterrows():
+                try:
+                    # Get episode identifier
+                    episode_raw = row.get(episode_col)
+                    if pd.isna(episode_raw):
+                        continue
+                    
+                    # Normalize identifier
+                    episode_identifier = str(episode_raw).strip()
+                    if episode_identifier.endswith('.0'):
+                        episode_identifier = episode_identifier[:-2]
+                    
+                    if not episode_identifier or episode_identifier.lower() == 'nan':
+                        continue
+
+                    # Get GRD expected days
+                    grd_raw = row.get(grd_col)
+                    if pd.isna(grd_raw):
+                        continue
+                    
+                    try:
+                        grd_days = int(float(grd_raw))
+                    except (ValueError, TypeError):
+                        logger.warning(f"Could not parse GRD value '{grd_raw}' for episode {episode_identifier}")
+                        continue
+
+                    # Find and update episode
+                    if episode_identifier in episode_map:
+                        episode_id = episode_map[episode_identifier]
+                        await self._update_episode_grd(episode_id, grd_days)
+                        updated_count += 1
+                    else:
+                        logger.debug(f"Episode not found for identifier: {episode_identifier}")
+                        missing_ids.append(episode_identifier)
+
+                except Exception as e:
+                    logger.error(f"Error processing GRD row {idx}: {e}")
+                    continue
+
+            await self.db.commit()
+            logger.info(f"Successfully updated {updated_count} episodes with GRD data. Missing episodes: {len(missing_ids)}")
+            
+            return {
+                "count": updated_count,
+                "missing_count": len(missing_ids),
+                "missing_ids": missing_ids[:100]  # Limit to first 100 missing IDs
+            }
+
+        except Exception as e:
+            logger.error(f"Error uploading GRD data: {e}")
+            await self.db.rollback()
+            raise
+
+    async def _update_episode_grd(self, episode_id: UUID, grd_days: int) -> None:
+        """Update the grd_expected_days field on a ClinicalEpisode."""
+        stmt = select(ClinicalEpisode).where(ClinicalEpisode.id == episode_id)
+        result = await self.db.execute(stmt)
+        episode = result.scalar_one_or_none()
+        
+        if episode:
+            episode.grd_expected_days = grd_days
+            await self.db.flush()
+            logger.debug(f"Updated episode {episode_id} with grd_expected_days={grd_days}")
+
 
 # ==================== MAIN UPLOAD FUNCTIONS ====================
 

@@ -33,6 +33,7 @@ function AppContent() {
   const [patientListFilters, setPatientListFilters] = useState<{
     sortBy?: string;
     socialScoreRange?: [number, number];
+    caseStatus?: string;
   }>({});
 
   // Mostrar pantalla de carga mientras se verifica la autenticación
@@ -48,7 +49,6 @@ function AppContent() {
   const navigation = [
     { id: 'dashboard' as View, name: 'Panel de Control', icon: LayoutDashboard },
     { id: 'patients' as View, name: 'Gestión de Casos', icon: Users },
-    { id: 'referral' as View, name: 'Derivar Paciente', icon: FileText },
     { id: 'upload' as View, name: 'Carga de Datos', icon: Upload },
   ];
 
@@ -60,7 +60,7 @@ function AppContent() {
     setSelectedPatient(null);
   };
 
-  const handleNavigateToPatients = (filters: { sortBy: string; socialScoreRange: [number, number] }) => {
+  const handleNavigateToPatients = (filters: { sortBy?: string; socialScoreRange?: [number, number]; caseStatus?: string }) => {
     setPatientListFilters(filters);
     setCurrentView('patients');
   };
@@ -79,6 +79,7 @@ function AppContent() {
             onSelectPatient={handleSelectPatient} 
             initialSortBy={patientListFilters.sortBy}
             initialSocialScoreRange={patientListFilters.socialScoreRange}
+            initialCaseStatus={patientListFilters.caseStatus}
             key={JSON.stringify(patientListFilters)}
           />
         );

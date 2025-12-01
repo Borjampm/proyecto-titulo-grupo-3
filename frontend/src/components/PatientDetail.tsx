@@ -178,22 +178,26 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
 
         <Separator className="my-4" />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className={`grid grid-cols-1 ${patient.expectedDays !== null ? 'md:grid-cols-3' : 'md:grid-cols-1'} gap-6`}>
           <div>
             <p className="text-muted-foreground">Días de Estadía</p>
             <p className="mt-1">{patient.daysInStay} días</p>
           </div>
-          <div>
-            <p className="text-muted-foreground">Días Esperados (GRD)</p>
-            <p className="mt-1">{patient.expectedDays} días</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Desvío</p>
-            <p className={`mt-1 ${patient.daysInStay - patient.expectedDays > 0 ? 'text-red-600' : 'text-green-600'}`}>
-              {patient.daysInStay - patient.expectedDays > 0 ? '+' : ''}
-              {patient.daysInStay - patient.expectedDays} días
-            </p>
-          </div>
+          {patient.expectedDays !== null && (
+            <>
+              <div>
+                <p className="text-muted-foreground">Días Esperados (GRD)</p>
+                <p className="mt-1">{patient.expectedDays} días</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Desvío</p>
+                <p className={`mt-1 ${patient.daysInStay - patient.expectedDays > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {patient.daysInStay - patient.expectedDays > 0 ? '+' : ''}
+                  {patient.daysInStay - patient.expectedDays} días
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </Card>
 
@@ -280,14 +284,14 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
               Riesgo Financiero
             </Badge>
           )}
-          {patient.daysInStay > patient.expectedDays && (
+          {patient.expectedDays !== null && patient.daysInStay > patient.expectedDays && (
             <Badge className="bg-red-100 text-red-800 border-red-300" variant="outline">
               Desvío de Estadía
             </Badge>
           )}
         </div>
         
-        {!patient.socialRisk && !patient.financialRisk && patient.daysInStay <= patient.expectedDays && (
+        {!patient.socialRisk && !patient.financialRisk && (patient.expectedDays === null || patient.daysInStay <= patient.expectedDays) && (
           <p className="text-muted-foreground">No se han detectado factores de riesgo críticos</p>
         )}
       </Card>

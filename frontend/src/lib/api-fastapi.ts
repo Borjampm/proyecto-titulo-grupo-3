@@ -281,12 +281,20 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
   const age = patient.birth_date ? calculateAge(patient.birth_date) : 0;
   const daysInStay = calculateDaysInStay(episode.admission_at, episode.discharge_at);
 
-  // Determinar nivel de riesgo basado en días de estadía
-  let riskLevel: 'low' | 'medium' | 'high' = 'low';
-  if (daysInStay > 10) {
-    riskLevel = 'high';
-  } else if (daysInStay > 5) {
-    riskLevel = 'medium';
+  // Determinar nivel de riesgo basado en desviación de GRD
+  // Si no hay GRD, el nivel de riesgo es desconocido
+  let riskLevel: 'low' | 'medium' | 'high' | 'unknown' = 'unknown';
+  const grdExpectedDays = episode.grd_expected_days;
+  
+  if (grdExpectedDays !== null && grdExpectedDays !== undefined) {
+    const deviation = daysInStay - grdExpectedDays;
+    if (deviation > 5) {
+      riskLevel = 'high';
+    } else if (deviation > 2) {
+      riskLevel = 'medium';
+    } else {
+      riskLevel = 'low';
+    }
   }
 
   // Determinar estado del caso
@@ -323,9 +331,8 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
     diagnosis: 'N/A', // TODO: Obtener del episodio cuando esté disponible
     grg: 'N/A', // TODO: Obtener del episodio cuando esté disponible
     daysInStay: daysInStay,
-    expectedDays: episode.expected_discharge ?
-      Math.ceil((new Date(episode.expected_discharge).getTime() - new Date(episode.admission_at).getTime()) / (1000 * 60 * 60 * 24)) :
-      7, // Default 7 días
+    // Use GRD expected days if available, null if no GRD data
+    expectedDays: episode.grd_expected_days ?? null,
     responsible: 'N/A', // TODO: Obtener del episodio cuando esté disponible
     prevision: undefined,
     contactNumber: undefined,
@@ -517,7 +524,7 @@ export async function getClinicalEpisodes(filters?: PatientFilters): Promise<Pag
       if (a.caseStatus === 'open' && b.caseStatus === 'closed') return -1;
       if (a.caseStatus === 'closed' && b.caseStatus === 'open') return 1;
 
-      const riskOrder = { high: 0, medium: 1, low: 2 };
+      const riskOrder: Record<string, number> = { high: 0, medium: 1, low: 2, unknown: 3 };
       return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
     });
 
@@ -577,7 +584,7 @@ export async function getClinicalEpisodes(filters?: PatientFilters): Promise<Pag
     if (a.caseStatus === 'open' && b.caseStatus === 'closed') return -1;
     if (a.caseStatus === 'closed' && b.caseStatus === 'open') return 1;
 
-    const riskOrder = { high: 0, medium: 1, low: 2 };
+    const riskOrder: Record<string, number> = { high: 0, medium: 1, low: 2, unknown: 3 };
     return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
   });
 
@@ -889,50 +896,28 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     page++;
   }
   
-  const episodes = allEpisodes;
+  // Filter to only include open cases - each episode is a "case"
+  const openCases = allEpisodes.filter(p => p.caseStatus === 'open');
+  const totalPatients = openCases.length;
+  
+  const highRiskPatients = openCases.filter(p => p.riskLevel === 'high').length;
+  const mediumRiskPatients = openCases.filter(p => p.riskLevel === 'medium').length;
+  const lowRiskPatients = openCases.filter(p => p.riskLevel === 'low').length;
 
-  // Agrupar episodios por paciente único (usando patientId)
-  // Para cada paciente, usar el episodio más reciente (mayor score social si hay empate)
-  const patientMap = new Map<string, typeof episodes[0]>();
-  
-  for (const episode of episodes) {
-    const patientId = episode.patientId || episode.id;
-    const existing = patientMap.get(patientId);
-    
-    if (!existing) {
-      patientMap.set(patientId, episode);
-    } else {
-      // Mantener el episodio con mayor días de estadía (más reciente/activo)
-      // o con score social si el actual tiene y el existente no
-      const existingHasScore = existing.socialScore !== null && existing.socialScore !== undefined;
-      const currentHasScore = episode.socialScore !== null && episode.socialScore !== undefined;
-      
-      if (currentHasScore && !existingHasScore) {
-        patientMap.set(patientId, episode);
-      } else if (episode.daysInStay > existing.daysInStay) {
-        patientMap.set(patientId, episode);
-      }
-    }
-  }
-  
-  const uniquePatients = Array.from(patientMap.values());
-  const totalPatients = uniquePatients.length;
-  
-  const highRiskPatients = uniquePatients.filter(p => p.riskLevel === 'high').length;
-  const mediumRiskPatients = uniquePatients.filter(p => p.riskLevel === 'medium').length;
-  const lowRiskPatients = uniquePatients.filter(p => p.riskLevel === 'low').length;
-
-  // Calcular promedio de días de estadía
-  const totalDays = uniquePatients.reduce((sum, p) => sum + p.daysInStay, 0);
+  // Calcular promedio de días de estadía (solo casos abiertos)
+  const totalDays = openCases.reduce((sum, p) => sum + p.daysInStay, 0);
   const averageStayDays = totalPatients > 0 ? Math.round(totalDays / totalPatients) : 0;
 
-  // Calcular desviaciones (pacientes con días de estadía mayor a los esperados)
-  const deviations = uniquePatients.filter(p => p.daysInStay > p.expectedDays).length;
+  // Calcular desviaciones (casos con días de estadía mayor a los esperados, solo casos abiertos con GRD)
+  const deviations = openCases.filter(p => p.expectedDays !== null && p.daysInStay > p.expectedDays).length;
 
-  // Calcular estadísticas de riesgo social (solo pacientes únicos)
-  const highSocialRisk = uniquePatients.filter(p => (p.socialScore ?? -1) > 10).length;
-  const mediumSocialRisk = uniquePatients.filter(p => (p.socialScore ?? -1) >= 6 && (p.socialScore ?? -1) <= 10).length;
-  const lowSocialRisk = uniquePatients.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore <= 5).length;
+  // Calcular estadísticas de riesgo social (solo casos abiertos)
+  // High: score > 10 (same as score >= 11)
+  const highSocialRisk = openCases.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore >= 11).length;
+  // Medium: score 6-10
+  const mediumSocialRisk = openCases.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore >= 6 && p.socialScore <= 10).length;
+  // Low: score 0-5
+  const lowSocialRisk = openCases.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore >= 0 && p.socialScore <= 5).length;
 
   return {
     totalPatients,
@@ -1071,6 +1056,29 @@ export async function importGestionEstadiaFromExcel(file: File): Promise<ExcelIm
     success: response.status === 'success',
     imported: response.processed || 0,
     errors: response.errors || [],
+  };
+}
+
+/**
+ * POST /excel/upload-grd
+ * Importa datos de GRD (días esperados de estadía) desde archivo Excel
+ * 
+ * Expects a file with "egresos 2024-2025" sheet containing:
+ * - Episodio CMBD: Episode identifier
+ * - Estancia Norma GRD: Expected stay days from GRD norm
+ */
+export async function importGrdFromExcel(file: File): Promise<ExcelImportResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await apiClient.uploadFile<any>('/excel/upload-grd', formData);
+
+  return {
+    success: response.status === 'success',
+    imported: response.episodes_updated || 0,
+    errors: response.errors || [],
+    missingCount: response.missing_count || 0,
+    missingIds: response.missing_ids || [],
   };
 }
 

@@ -7,7 +7,7 @@ import { getDashboardStats, getAllAlerts, getClinicalEpisodes } from '../lib/api
 import { DashboardStats, Alert as AlertType, Patient } from '../types';
 
 interface DashboardProps {
-  onNavigateToPatients?: (filters: { sortBy: string; socialScoreRange: [number, number] }) => void;
+  onNavigateToPatients?: (filters: { sortBy?: string; socialScoreRange?: [number, number]; caseStatus?: string }) => void;
 }
 
 export function Dashboard({ onNavigateToPatients }: DashboardProps) {
@@ -61,10 +61,13 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <Card className="p-4">
+        <Card 
+          className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+          onClick={() => onNavigateToPatients?.({ caseStatus: 'open' })}
+        >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-muted-foreground">Total Casos</p>
+              <p className="text-muted-foreground">Casos Abiertos</p>
               <p className="mt-1">{stats.totalPatients}</p>
             </div>
             <Users className="w-8 h-8 text-blue-600" />
@@ -118,7 +121,7 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card 
             className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [11, 20] })}
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [11, 20], caseStatus: 'open' })}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -131,7 +134,7 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
 
           <Card 
             className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [6, 10] })}
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [6, 10], caseStatus: 'open' })}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -144,7 +147,7 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
 
           <Card 
             className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [0, 5] })}
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [0, 5], caseStatus: 'open' })}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -174,7 +177,10 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
                   <div className="text-right">
                     <RiskBadge level={patient.riskLevel} />
                     <p className="text-muted-foreground mt-1">
-                      {patient.daysInStay} días ({patient.daysInStay - patient.expectedDays > 0 ? '+' : ''}{patient.daysInStay - patient.expectedDays})
+                      {patient.daysInStay} días
+                      {patient.expectedDays !== null && (
+                        <> ({patient.daysInStay - patient.expectedDays > 0 ? '+' : ''}{patient.daysInStay - patient.expectedDays})</>
+                      )}
                     </p>
                   </div>
                 </div>

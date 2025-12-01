@@ -4,10 +4,10 @@ import { Button } from './ui/button';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { importSocialScoresFromExcel, importBedsFromExcel, importGestionEstadiaFromExcel } from '../lib/api-fastapi';
+import { importSocialScoresFromExcel, importBedsFromExcel, importGestionEstadiaFromExcel, importGrdFromExcel } from '../lib/api-fastapi';
 import { toast } from 'sonner';
 
-type ExcelFileType = 'score_social' | 'beds' | 'gestion_estadia';
+type ExcelFileType = 'score_social' | 'beds' | 'gestion_estadia' | 'grd';
 
 export function DataUpload() {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -43,6 +43,10 @@ export function DataUpload() {
           case 'gestion_estadia':
             result = await importGestionEstadiaFromExcel(file);
             successMessage = `${result.imported} registros de gestión estadía importados exitosamente`;
+            break;
+          case 'grd':
+            result = await importGrdFromExcel(file);
+            successMessage = `${result.imported} episodios actualizados con datos GRD`;
             break;
         }
         
@@ -153,6 +157,7 @@ export function DataUpload() {
                 <SelectItem value="score_social">Score Social</SelectItem>
                 <SelectItem value="beds">Camas</SelectItem>
                 <SelectItem value="gestion_estadia">Gestión Estadía</SelectItem>
+                <SelectItem value="grd">GRD (Días Esperados)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -228,6 +233,20 @@ export function DataUpload() {
               </ul>
               <p className="text-muted-foreground mt-4 text-sm">
                 Formatos aceptados: .xlsx, .xls, .xlsm
+              </p>
+            </>
+          )}
+          {fileType === 'grd' && (
+            <>
+              <p className="text-muted-foreground mb-4">
+                El archivo debe contener una hoja &quot;egresos 2024-2025&quot; con los días esperados de estadía según GRD:
+              </p>
+              <ul className="space-y-2 text-muted-foreground">
+                <li>• <strong>Episodio CMBD</strong> - Identificador del episodio</li>
+                <li>• <strong>Estancia Norma GRD</strong> - Días esperados de estadía</li>
+              </ul>
+              <p className="text-muted-foreground mt-4 text-sm">
+                Este archivo actualiza los días esperados de estadía para los episodios existentes según la norma GRD.
               </p>
             </>
           )}
