@@ -429,13 +429,22 @@ function transformHistoryEventToTimelineEvent(event: any, episodeId: string): Ti
       type = 'status-change';
   }
 
+  // Determine author for task events - prioritize assigned worker name
+  let author = 'Sistema';
+  if (type === 'task-created' || type === 'task-completed' || type === 'task-updated') {
+    // For task events, use assigned worker name if available
+    author = event.metadata?.assigned_worker_name || event.metadata?.changed_by || 'Sin asignar';
+  } else {
+    author = event.metadata?.user_name || event.metadata?.changed_by || 'Sistema';
+  }
+
   return {
     id: `${episodeId}_${event.event_date}_${Math.random().toString(36).substr(2, 9)}`,
     patientId: episodeId,
     type: type,
     timestamp: event.event_date,
-    author: event.metadata?.user_name || event.metadata?.changed_by || 'Sistema',
-    role: 'coordinator',
+    author: author,
+    role: type.startsWith('task-') ? undefined : 'coordinator',
     title: title,
     description: description,
     relatedId: event.metadata?.related_id,

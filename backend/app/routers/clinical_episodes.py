@@ -434,7 +434,9 @@ async def get_episode_history(
     
     # 3. Task creation events
     tasks_result = await session.execute(
-        select(TaskInstance).where(TaskInstance.episode_id == episode_id)
+        select(TaskInstance)
+        .options(selectinload(TaskInstance.assigned_worker))
+        .where(TaskInstance.episode_id == episode_id)
     )
     tasks = tasks_result.scalars().all()
     
@@ -442,6 +444,9 @@ async def get_episode_history(
     task_map = {str(task.id): task for task in tasks}
     
     for task in tasks:
+        # Get assigned worker name
+        assigned_worker_name = task.assigned_worker.name if task.assigned_worker else None
+        
         # Task creation event
         events.append(HistoryEvent(
             event_type=HistoryEventType.TASK_CREATED,
@@ -452,7 +457,8 @@ async def get_episode_history(
                 "title": task.title,
                 "description": task.description,
                 "initial_status": task.status.value,
-                "priority": task.priority
+                "priority": task.priority,
+                "assigned_worker_name": assigned_worker_name
             }
         ))
     
@@ -471,6 +477,8 @@ async def get_episode_history(
         for status_change in status_changes:
             task = task_map.get(str(status_change.task_id))
             task_title = task.title if task else "Unknown Task"
+            # Get assigned worker name from the task
+            assigned_worker_name = task.assigned_worker.name if task and task.assigned_worker else None
             
             # Build description based on old and new status
             if status_change.old_status is None:
@@ -488,7 +496,8 @@ async def get_episode_history(
                     "old_status": status_change.old_status.value if status_change.old_status else None,
                     "new_status": status_change.new_status.value,
                     "changed_by": status_change.changed_by,
-                    "notes": status_change.notes
+                    "notes": status_change.notes,
+                    "assigned_worker_name": assigned_worker_name
                 }
             ))
     
