@@ -1,4 +1,4 @@
-import { Patient, Alert, TimelineEvent, Task, Document as DocumentType } from '../types';
+import { Patient, Alert, TimelineEvent, Task, Document as DocumentType, WorkerSimple } from '../types';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
@@ -10,7 +10,18 @@ import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Timeline } from './Timeline';
-import { ArrowLeft, Calendar, User, Building, FileText, AlertTriangle, Upload, Clock, ClipboardList, CheckCircle2, Circle } from 'lucide-react';
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from './ui/alert-dialog';
+import { ArrowLeft, Calendar, User, Building, FileText, AlertTriangle, Upload, Clock, ClipboardList, CheckCircle2, Circle, UserCircle, XCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { 
   getPatientAlerts, 
@@ -18,7 +29,12 @@ import {
   getPatientTasks,
   getPatientDocuments,
   createTask,
-  updateTask
+  updateTask,
+  getWorkersSimple,
+  uploadDocument,
+  deleteDocument,
+  downloadDocument,
+  closeEpisode
 } from '../lib/api-fastapi';
 import { toast } from 'sonner';
 
@@ -28,32 +44,43 @@ interface PatientDetailProps {
 }
 
 export function PatientDetail({ patient, onBack }: PatientDetailProps) {
-  const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignedTo: '' });
+  const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignedToId: '', dueDate: '' });
   const [patientAlerts, setPatientAlerts] = useState<Alert[]>([]);
   const [patientTimelineEvents, setPatientTimelineEvents] = useState<TimelineEvent[]>([]);
   const [patientTasks, setPatientTasks] = useState<Task[]>([]);
   const [patientDocuments, setPatientDocuments] = useState<DocumentType[]>([]);
+  const [workers, setWorkers] = useState<WorkerSimple[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterAssignee, setFilterAssignee] = useState<string>('all');
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [isClosingEpisode, setIsClosingEpisode] = useState(false);
+  const [showCloseDialog, setShowCloseDialog] = useState(false);
+
+  // Note: patient.id is the episode ID, patient.patientId is the actual patient ID
+  const actualPatientId = patient.patientId || patient.id;
 
   useEffect(() => {
-    console.log('Episode ID:', patient.medicalIdentifier);
+    console.log('Episode ID:', patient.id, 'Patient ID:', actualPatientId);
     loadPatientData();
-  }, [patient.id]);
+  }, [patient.id, actualPatientId]);
 
   const loadPatientData = async () => {
     try {
       setLoading(true);
-      const [alerts, timeline, tasks, documents] = await Promise.all([
+      const [alerts, timeline, tasks, documents, workersData] = await Promise.all([
         getPatientAlerts(patient.id),
         getPatientTimeline(patient.id),
         getPatientTasks(patient.id),
-        getPatientDocuments(patient.id),
+        getPatientDocuments(actualPatientId), // Use actual patient ID for documents
+        getWorkersSimple(),
       ]);
       
       setPatientAlerts(alerts);
       setPatientTimelineEvents(timeline);
       setPatientTasks(tasks);
       setPatientDocuments(documents);
+      setWorkers(workersData);
     } catch (error) {
       console.error('Error loading patient data:', error);
       toast.error('Error al cargar datos del paciente');
@@ -62,20 +89,41 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
     }
   };
 
+  const handleCloseEpisode = async () => {
+    if (patient.caseStatus === 'closed') return;
+    
+    try {
+      setIsClosingEpisode(true);
+      setShowCloseDialog(false);
+      await closeEpisode(patient.id);
+      toast.success('Episodio cerrado exitosamente');
+      // Reload or go back after closing
+      onBack();
+    } catch (error) {
+      console.error('Error closing episode:', error);
+      toast.error('Error al cerrar el episodio');
+    } finally {
+      setIsClosingEpisode(false);
+    }
+  };
+
   const handleAddTask = async () => {
     if (newTask.title.trim()) {
       try {
+        const selectedWorker = workers.find(w => w.id === newTask.assignedToId);
         await createTask(patient.id, {
           title: newTask.title,
           description: newTask.description,
           priority: newTask.priority as any,
           status: 'pending',
-          assignedTo: newTask.assignedTo || 'Sin asignar',
+          assignedTo: selectedWorker?.name || 'Sin asignar',
+          assignedToId: newTask.assignedToId || undefined,
+          dueDate: newTask.dueDate || undefined,
           createdBy: 'Usuario actual',
         });
         
         toast.success('Tarea creada exitosamente');
-        setNewTask({ title: '', description: '', priority: 'medium', assignedTo: '' });
+        setNewTask({ title: '', description: '', priority: 'medium', assignedToId: '', dueDate: '' });
         loadPatientData(); // Recargar datos
       } catch (error) {
         console.error('Error creating task:', error);
@@ -83,6 +131,67 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
       }
     }
   };
+
+  // Document upload handlers
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    
+    setIsUploading(true);
+    try {
+      for (const file of Array.from(files)) {
+        await uploadDocument(actualPatientId, file, 'Usuario actual');
+      }
+      toast.success(files.length > 1 ? `${files.length} documentos subidos exitosamente` : 'Documento subido exitosamente');
+      loadPatientData();
+    } catch (error) {
+      console.error('Error uploading document:', error);
+      toast.error('Error al subir el documento');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    handleFileUpload(e.dataTransfer.files);
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    try {
+      await deleteDocument(docId);
+      toast.success('Documento eliminado exitosamente');
+      loadPatientData();
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      toast.error('Error al eliminar el documento');
+    }
+  };
+
+  const handleViewDocument = async (docId: string) => {
+    try {
+      const url = await downloadDocument(docId);
+      window.open(url, '_blank');
+    } catch (error) {
+      console.error('Error downloading document:', error);
+      toast.error('Error al descargar el documento');
+    }
+  };
+
+  // Filter tasks by assignee
+  const filteredTasks = filterAssignee === 'all' 
+    ? patientTasks 
+    : patientTasks.filter(t => t.assignedToId === filterAssignee);
 
   return (
     <div className="space-y-6">
@@ -96,7 +205,39 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
             Detalle completo del paciente y gestión de estadía
           </p>
         </div>
-        <RiskBadge level={patient.riskLevel} />
+        <div className="flex items-center gap-3">
+          {patient.caseStatus === 'open' && (
+            <AlertDialog open={showCloseDialog} onOpenChange={setShowCloseDialog}>
+              <AlertDialogTrigger asChild>
+                <Button 
+                  variant="destructive"
+                  disabled={isClosingEpisode}
+                >
+                  <XCircle className="w-4 h-4 mr-2" />
+                  {isClosingEpisode ? 'Cerrando...' : 'Cerrar Episodio'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Cerrar episodio?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta acción marcará el episodio como cerrado (alta). 
+                    ¿Estás seguro de que deseas continuar?
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={handleCloseEpisode}
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    Cerrar Episodio
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
       </div>
 
       {/* Patient Info Cards */}
@@ -135,8 +276,8 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
           <div className="flex items-center gap-3">
             <FileText className="w-5 h-5 text-muted-foreground" />
             <div>
-              <p className="text-muted-foreground">GRD</p>
-              <p>{patient.grg}</p>
+              <p className="text-muted-foreground">GRD (Días Esperados)</p>
+              <p>{patient.expectedDays !== null ? `${patient.expectedDays} días` : 'Sin datos GRD'}</p>
             </div>
           </div>
         </Card>
@@ -163,7 +304,7 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
           <div>
             <p className="text-muted-foreground">Estado del Caso</p>
             <Badge 
-              className="mt-1" 
+              className="mt-1"
               variant="outline"
               style={{
                 backgroundColor: patient.caseStatus === 'open' ? 'rgb(240 253 244)' : 'rgb(249 250 251)',
@@ -178,22 +319,32 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
 
         <Separator className="my-4" />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className={`grid grid-cols-1 ${patient.expectedDays !== null ? 'md:grid-cols-4' : 'md:grid-cols-1'} gap-6`}>
           <div>
             <p className="text-muted-foreground">Días de Estadía</p>
             <p className="mt-1">{patient.daysInStay} días</p>
           </div>
-          <div>
-            <p className="text-muted-foreground">Días Esperados (GRD)</p>
-            <p className="mt-1">{patient.expectedDays} días</p>
-          </div>
-          <div>
-            <p className="text-muted-foreground">Desvío</p>
-            <p className={`mt-1 ${patient.daysInStay - patient.expectedDays > 0 ? 'text-red-600' : 'text-green-600'}`}>
-              {patient.daysInStay - patient.expectedDays > 0 ? '+' : ''}
-              {patient.daysInStay - patient.expectedDays} días
-            </p>
-          </div>
+          {patient.expectedDays !== null && (
+            <>
+              <div>
+                <p className="text-muted-foreground">Días Esperados (GRD)</p>
+                <p className="mt-1">{patient.expectedDays} días</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Fecha Alta Esperada</p>
+                <p className="mt-1">
+                  {new Date(new Date(patient.admissionDate).getTime() + patient.expectedDays * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES')}
+                </p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Desvío</p>
+                <p className={`mt-1 ${patient.daysInStay - patient.expectedDays > 0 ? 'text-red-600' : 'text-green-600'}`}>
+                  {patient.daysInStay - patient.expectedDays > 0 ? '+' : ''}
+                  {patient.daysInStay - patient.expectedDays} días
+                </p>
+              </div>
+            </>
+          )}
         </div>
       </Card>
 
@@ -280,14 +431,14 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
               Riesgo Financiero
             </Badge>
           )}
-          {patient.daysInStay > patient.expectedDays && (
+          {patient.expectedDays !== null && patient.daysInStay > patient.expectedDays && (
             <Badge className="bg-red-100 text-red-800 border-red-300" variant="outline">
               Desvío de Estadía
             </Badge>
           )}
         </div>
         
-        {!patient.socialRisk && !patient.financialRisk && patient.daysInStay <= patient.expectedDays && (
+        {!patient.socialRisk && !patient.financialRisk && (patient.expectedDays === null || patient.daysInStay <= patient.expectedDays) && (
           <p className="text-muted-foreground">No se han detectado factores de riesgo críticos</p>
         )}
       </Card>
@@ -335,12 +486,22 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="task-assigned">Asignar a</Label>
-                  <Input
-                    id="task-assigned"
-                    value={newTask.assignedTo}
-                    onChange={(e) => setNewTask({ ...newTask, assignedTo: e.target.value })}
-                    placeholder="Nombre del responsable"
-                  />
+                  <Select 
+                    value={newTask.assignedToId || 'unassigned'} 
+                    onValueChange={(value) => setNewTask({ ...newTask, assignedToId: value === 'unassigned' ? '' : value })}
+                  >
+                    <SelectTrigger id="task-assigned">
+                      <SelectValue placeholder="Seleccionar trabajador" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">Sin asignar</SelectItem>
+                      {workers.map((worker) => (
+                        <SelectItem key={worker.id} value={worker.id}>
+                          {worker.name} {worker.role && `(${worker.role})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-2">
@@ -353,18 +514,29 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                   rows={3}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="task-priority">Prioridad</Label>
-                <Select value={newTask.priority} onValueChange={(value) => setNewTask({ ...newTask, priority: value })}>
-                  <SelectTrigger id="task-priority">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Baja</SelectItem>
-                    <SelectItem value="medium">Media</SelectItem>
-                    <SelectItem value="high">Alta</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="task-priority">Prioridad</Label>
+                  <Select value={newTask.priority} onValueChange={(value) => setNewTask({ ...newTask, priority: value })}>
+                    <SelectTrigger id="task-priority">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Baja</SelectItem>
+                      <SelectItem value="medium">Media</SelectItem>
+                      <SelectItem value="high">Alta</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="task-duedate">Fecha de Vencimiento</Label>
+                  <Input
+                    id="task-duedate"
+                    type="date"
+                    value={newTask.dueDate}
+                    onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
+                  />
+                </div>
               </div>
               <Button onClick={handleAddTask}>
                 <ClipboardList className="w-4 h-4 mr-2" />
@@ -374,12 +546,30 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
           </Card>
 
           <Card className="p-6">
-            <h4 className="mb-4">Tareas Activas</h4>
+            <div className="flex items-center justify-between mb-4">
+              <h4>Tareas Activas</h4>
+              <div className="flex items-center gap-2">
+                <Label className="text-sm text-muted-foreground">Filtrar:</Label>
+                <Select value={filterAssignee} onValueChange={setFilterAssignee}>
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Todos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    {workers.map((worker) => (
+                      <SelectItem key={worker.id} value={worker.id}>
+                        {worker.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div className="space-y-3">
-              {patientTasks.filter(t => t.status !== 'completed').length === 0 ? (
+              {filteredTasks.filter(t => t.status !== 'completed').length === 0 ? (
                 <p className="text-muted-foreground">No hay tareas activas</p>
               ) : (
-                patientTasks.filter(t => t.status !== 'completed').map(task => (
+                filteredTasks.filter(t => t.status !== 'completed').map(task => (
                   <div key={task.id} className="border rounded-lg p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
@@ -390,6 +580,10 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                             <Circle className="w-4 h-4 text-gray-400" />
                           )}
                           <h4>{task.title}</h4>
+                        </div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-sm text-muted-foreground">Responsable:</span>
+                          <span className="text-sm font-medium">{task.assignedTo || 'Sin asignar'}</span>
                         </div>
                         {task.description && (
                           <p className="text-muted-foreground mb-2">{task.description}</p>
@@ -405,8 +599,22 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                           >
                             Prioridad {task.priority === 'high' ? 'Alta' : task.priority === 'medium' ? 'Media' : 'Baja'}
                           </Badge>
-                          {task.assignedTo && (
-                            <Badge variant="outline">Asignado a: {task.assignedTo}</Badge>
+                          <Badge variant="outline" className="flex items-center gap-1">
+                            <UserCircle className="w-3 h-3" />
+                            {task.assignedTo}
+                          </Badge>
+                          {task.dueDate && (
+                            <Badge 
+                              variant="outline"
+                              className={
+                                new Date(task.dueDate) < new Date() 
+                                  ? 'bg-red-50 text-red-700 border-red-200' 
+                                  : 'bg-gray-50'
+                              }
+                            >
+                              <Calendar className="w-3 h-3 mr-1" />
+                              {new Date(task.dueDate).toLocaleDateString('es-ES')}
+                            </Badge>
                           )}
                         </div>
                       </div>
@@ -433,12 +641,31 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                             <SelectItem value="completed">Completada</SelectItem>
                           </SelectContent>
                         </Select>
-                        {task.dueDate && (
-                          <div className="text-right">
-                            <p className="text-muted-foreground text-sm">Vencimiento</p>
-                            <p className="text-sm">{new Date(task.dueDate).toLocaleDateString('es-ES')}</p>
-                          </div>
-                        )}
+                        <Select
+                          value={task.assignedToId || 'unassigned'}
+                          onValueChange={async (value) => {
+                            try {
+                              await updateTask(task.id, { assignedToId: value === 'unassigned' ? undefined : value });
+                              toast.success('Asignación actualizada');
+                              loadPatientData();
+                            } catch (error) {
+                              console.error('Error updating task assignee:', error);
+                              toast.error('Error al actualizar asignación');
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="w-[140px]">
+                            <SelectValue placeholder="Asignar..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Sin asignar</SelectItem>
+                            {workers.map((worker) => (
+                              <SelectItem key={worker.id} value={worker.id}>
+                                {worker.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                   </div>
@@ -450,19 +677,27 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
           <Card className="p-6">
             <h4 className="mb-4">Tareas Completadas</h4>
             <div className="space-y-3">
-              {patientTasks.filter(t => t.status === 'completed').length === 0 ? (
+              {filteredTasks.filter(t => t.status === 'completed').length === 0 ? (
                 <p className="text-muted-foreground">No hay tareas completadas</p>
               ) : (
-                patientTasks.filter(t => t.status === 'completed').map(task => (
+                filteredTasks.filter(t => t.status === 'completed').map(task => (
                   <div key={task.id} className="border rounded-lg p-4 bg-green-50/50">
                     <div className="flex items-start gap-3">
                       <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5" />
                       <div className="flex-1">
                         <h4 className="mb-1">{task.title}</h4>
-                        <p className="text-muted-foreground mb-2">{task.description}</p>
-                        <p className="text-muted-foreground">
-                          Completada el {task.completedAt ? new Date(task.completedAt).toLocaleDateString('es-ES') : 'N/A'}
-                        </p>
+                        {task.description && (
+                          <p className="text-muted-foreground mb-2">{task.description}</p>
+                        )}
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span>Completada el {task.completedAt ? new Date(task.completedAt).toLocaleDateString('es-ES') : 'N/A'}</span>
+                          {task.assignedTo && task.assignedTo !== 'Sin asignar' && (
+                            <>
+                              <span>•</span>
+                              <span>Por: {task.assignedTo}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -476,13 +711,41 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
         <TabsContent value="documents" className="mt-4 space-y-4">
           <Card className="p-6">
             <h4 className="mb-4">Cargar Nuevo Documento</h4>
-            <div className="border-2 border-dashed rounded-lg p-8 text-center">
-              <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground mb-4">
-                Arrastra archivos aquí o haz clic para cargar
+            <div 
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
+                isDragOver 
+                  ? 'border-blue-500 bg-blue-50' 
+                  : 'border-gray-300 hover:border-gray-400'
+              } ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => document.getElementById('document-upload')?.click()}
+            >
+              <Upload className={`w-12 h-12 mx-auto mb-4 ${isDragOver ? 'text-blue-500' : 'text-muted-foreground'}`} />
+              <p className={`mb-4 ${isDragOver ? 'text-blue-600' : 'text-muted-foreground'}`}>
+                {isUploading 
+                  ? 'Subiendo archivo...' 
+                  : isDragOver 
+                    ? 'Suelta el archivo aquí' 
+                    : 'Arrastra archivos aquí o haz clic para cargar'}
               </p>
-              <Button variant="outline">Seleccionar Archivos</Button>
+              <input
+                type="file"
+                id="document-upload"
+                className="hidden"
+                multiple
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.xlsx,.xls,.txt"
+                onChange={(e) => handleFileUpload(e.target.files)}
+                disabled={isUploading}
+              />
+              <Button variant="outline" disabled={isUploading}>
+                {isUploading ? 'Subiendo...' : 'Seleccionar Archivos'}
+              </Button>
             </div>
+            <p className="text-muted-foreground mt-4 text-sm">
+              Formatos aceptados: PDF, DOC, DOCX, JPG, PNG, GIF, XLSX, XLS, TXT (máx. 10MB)
+            </p>
           </Card>
 
           <Card className="p-6">
@@ -502,9 +765,19 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                         </p>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm">
-                      Ver
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleViewDocument(doc.id)}>
+                        Descargar
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => handleDeleteDocument(doc.id)}
+                      >
+                        Eliminar
+                      </Button>
+                    </div>
                   </div>
                 ))
               )}

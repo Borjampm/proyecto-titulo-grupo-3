@@ -16,19 +16,26 @@ interface PatientListProps {
   onSelectPatient: (patient: Patient) => void;
   initialSortBy?: string;
   initialSocialScoreRange?: [number, number];
+  initialCaseStatus?: string;
+  initialRiskLevel?: string;
 }
 
 export function PatientList({ 
   onSelectPatient,
   initialSortBy = 'none',
-  initialSocialScoreRange = [0, 20]
+  initialSocialScoreRange = [0, 20],
+  initialCaseStatus = 'open',
+  initialRiskLevel = 'all'
 }: PatientListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterService, setFilterService] = useState<string>('all');
-  const [filterRisk, setFilterRisk] = useState<string>('all');
-  const [filterCaseStatus, setFilterCaseStatus] = useState<string>('all');
+  const [filterRisk, setFilterRisk] = useState<string>(initialRiskLevel);
+  const [filterCaseStatus, setFilterCaseStatus] = useState<string>(initialCaseStatus);
   const [sortBy, setSortBy] = useState<string>(initialSortBy);
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  // Show advanced options if navigating with a custom social score range
+  const [showAdvanced, setShowAdvanced] = useState(
+    initialSocialScoreRange[0] !== 0 || initialSocialScoreRange[1] !== 20
+  );
   const [socialScoreRange, setSocialScoreRange] = useState<[number, number]>(initialSocialScoreRange);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [services, setServices] = useState<string[]>([]);
@@ -92,10 +99,22 @@ export function PatientList({
       const scoreB = b.socialScore ?? -1;
       return scoreB - scoreA;
     }
+    if (sortBy === 'deviation') {
+      // Sort by deviation descending (highest deviation first), only for patients with GRD
+      const deviationA = a.expectedDays !== null ? a.daysInStay - a.expectedDays : -Infinity;
+      const deviationB = b.expectedDays !== null ? b.daysInStay - b.expectedDays : -Infinity;
+      return deviationB - deviationA;
+    }
     return 0; // No sorting
   });
 
   const filteredPatients = sortedPatients.filter(patient => {
+    // Filter by deviation when sortBy is 'deviation' - only show patients with GRD and positive deviation
+    if (sortBy === 'deviation') {
+      if (patient.expectedDays === null) return false;
+      if (patient.daysInStay <= patient.expectedDays) return false;
+    }
+    
     // Filter by social score range if customized
     if (socialScoreRange[0] === 0 && socialScoreRange[1] === 20) return true;
     
@@ -161,6 +180,7 @@ export function PatientList({
               <SelectItem value="high">Alto Riesgo</SelectItem>
               <SelectItem value="medium">Riesgo Medio</SelectItem>
               <SelectItem value="low">Bajo Riesgo</SelectItem>
+              <SelectItem value="unknown">Sin GRD</SelectItem>
             </SelectContent>
           </Select>
 
@@ -171,6 +191,7 @@ export function PatientList({
             <SelectContent>
               <SelectItem value="none">Sin ordenar</SelectItem>
               <SelectItem value="social-score">Puntaje Social</SelectItem>
+              <SelectItem value="deviation">Desviación GRD</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -189,7 +210,7 @@ export function PatientList({
             <div className="mt-4 p-4 bg-muted/30 rounded-lg">
               <div className="max-w-md">
                 <div className="flex justify-between mb-2">
-                  <Label>Rango de Alerta Social</Label>
+                  <Label>Rango de Score Social</Label>
                   <span className="text-sm text-muted-foreground">
                     {socialScoreRange[0]} - {socialScoreRange[1]}
                   </span>
@@ -224,7 +245,7 @@ export function PatientList({
               <TableHead>Desvío</TableHead>
               <TableHead>Nivel Riesgo</TableHead>
               <TableHead>Estado Caso</TableHead>
-              <TableHead>Alertas Sociales</TableHead>
+              <TableHead>Score Sociales</TableHead>
               <TableHead>Acción</TableHead>
             </TableRow>
           </TableHeader>
@@ -243,7 +264,8 @@ export function PatientList({
               </TableRow>
             ) : (
               filteredPatients.map(patient => {
-                const deviation = patient.daysInStay - patient.expectedDays;
+                const hasGrd = patient.expectedDays !== null;
+                const deviation = hasGrd ? patient.daysInStay - patient.expectedDays : null;
                 
                 return (
                   <TableRow key={patient.id} className="cursor-pointer hover:bg-muted/50">
@@ -255,12 +277,16 @@ export function PatientList({
                     <TableCell>{patient.service}</TableCell>
                     <TableCell className="max-w-xs truncate">{patient.diagnosis}</TableCell>
                     <TableCell>
-                      {patient.daysInStay} / {patient.expectedDays}
+                      {hasGrd ? `${patient.daysInStay} / ${patient.expectedDays}` : patient.daysInStay}
                     </TableCell>
                     <TableCell>
-                      <span className={deviation > 0 ? 'text-red-600' : 'text-green-600'}>
-                        {deviation > 0 ? '+' : ''}{deviation}
-                      </span>
+                      {hasGrd ? (
+                        <span className={deviation! > 0 ? 'text-red-600' : 'text-green-600'}>
+                          {deviation! > 0 ? '+' : ''}{deviation}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground text-sm">No GRD</span>
+                      )}
                     </TableCell>
                     <TableCell>
                       <RiskBadge level={patient.riskLevel} />

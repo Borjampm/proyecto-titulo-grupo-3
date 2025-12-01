@@ -1,20 +1,21 @@
 import { useEffect, useState } from 'react';
 import { Card } from './ui/card';
-import { Users, AlertTriangle, TrendingUp, Clock, Activity } from 'lucide-react';
+import { Badge } from './ui/badge';
+import { Users, AlertTriangle, TrendingUp, Clock, Activity, ClipboardList, Circle, Calendar } from 'lucide-react';
 import { RiskBadge } from './RiskBadge';
-import { Alert, AlertDescription } from './ui/alert';
-import { getDashboardStats, getAllAlerts, getClinicalEpisodes } from '../lib/api-fastapi';
-import { DashboardStats, Alert as AlertType, Patient } from '../types';
+import { getDashboardStats, getClinicalEpisodes, getAllTasks } from '../lib/api-fastapi';
+import { DashboardStats, Patient, Task } from '../types';
 
 interface DashboardProps {
-  onNavigateToPatients?: (filters: { sortBy: string; socialScoreRange: [number, number] }) => void;
+  onNavigateToPatients?: (filters: { sortBy?: string; socialScoreRange?: [number, number]; caseStatus?: string; riskLevel?: string }) => void;
+  onSelectPatient?: (patient: Patient) => void;
 }
 
-export function Dashboard({ onNavigateToPatients }: DashboardProps) {
+export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [recentAlerts, setRecentAlerts] = useState<AlertType[]>([]);
+  const [pendingTasks, setPendingTasks] = useState<Task[]>([]);
+  const [totalOpenTasks, setTotalOpenTasks] = useState(0);
   const [urgentPatients, setUrgentPatients] = useState<Patient[]>([]);
-  const [allPatients, setAllPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -24,17 +25,18 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const [statsData, alertsData, urgentPatientsData, allPatientsData] = await Promise.all([
+      const [statsData, urgentPatientsData, tasksData] = await Promise.all([
         getDashboardStats(),
-        getAllAlerts(),
         getClinicalEpisodes({ riskLevel: 'high', pageSize: 5 }),
-        getClinicalEpisodes({ pageSize: 100 }),
+        getAllTasks({ openOnly: true, orderByDueDate: true }),
       ]);
       
       setStats(statsData);
-      setRecentAlerts(alertsData.slice(0, 5));
       setUrgentPatients(urgentPatientsData.data);
-      setAllPatients(allPatientsData.data);
+      // Filter pending tasks and limit to 5 for display
+      const pending = tasksData.filter(t => t.status === 'pending');
+      setPendingTasks(pending.slice(0, 5));
+      setTotalOpenTasks(tasksData.length);
     } catch (error) {
       console.error('Error loading dashboard:', error);
     } finally {
@@ -61,17 +63,23 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <Card className="p-4">
+        <Card 
+          className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+          onClick={() => onNavigateToPatients?.({ caseStatus: 'open' })}
+        >
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-muted-foreground">Total Casos</p>
+              <p className="text-muted-foreground">Casos Abiertos</p>
               <p className="mt-1">{stats.totalPatients}</p>
             </div>
             <Users className="w-8 h-8 text-blue-600" />
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card 
+          className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+          onClick={() => onNavigateToPatients?.({ caseStatus: 'open', riskLevel: 'high' })}
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-muted-foreground">Alto Riesgo</p>
@@ -81,7 +89,10 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card 
+          className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+          onClick={() => onNavigateToPatients?.({ caseStatus: 'open', riskLevel: 'medium' })}
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-muted-foreground">Riesgo Medio</p>
@@ -91,7 +102,10 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card 
+          className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+          onClick={() => onNavigateToPatients?.({ caseStatus: 'open', sortBy: 'deviation' })}
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-muted-foreground">Desviaciones</p>
@@ -118,7 +132,7 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card 
             className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [11, 20] })}
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [11, 20], caseStatus: 'open' })}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -131,7 +145,7 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
 
           <Card 
             className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [6, 10] })}
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [6, 10], caseStatus: 'open' })}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -144,7 +158,7 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
 
           <Card 
             className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [0, 5] })}
+            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [0, 5], caseStatus: 'open' })}
           >
             <div className="flex items-center justify-between">
               <div>
@@ -166,7 +180,11 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
               <p className="text-muted-foreground">No hay pacientes de alto riesgo</p>
             ) : (
               urgentPatients.map(patient => (
-                <div key={patient.id} className="flex items-center justify-between p-3 border rounded-lg">
+                <div 
+                  key={patient.id} 
+                  className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => onSelectPatient?.(patient)}
+                >
                   <div>
                     <p>{patient.name}</p>
                     <p className="text-muted-foreground">{patient.service}</p>
@@ -174,7 +192,10 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
                   <div className="text-right">
                     <RiskBadge level={patient.riskLevel} />
                     <p className="text-muted-foreground mt-1">
-                      {patient.daysInStay} días ({patient.daysInStay - patient.expectedDays > 0 ? '+' : ''}{patient.daysInStay - patient.expectedDays})
+                      {patient.daysInStay} días
+                      {patient.expectedDays !== null && (
+                        <> ({patient.daysInStay - patient.expectedDays > 0 ? '+' : ''}{patient.daysInStay - patient.expectedDays})</>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -183,31 +204,52 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
           </div>
         </Card>
 
-        {/* Recent Alerts */}
+        {/* Pending Tasks */}
         <Card className="p-6">
-          <h3 className="mb-4">Alertas Recientes</h3>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-primary" />
+              <h3>Tareas Pendientes</h3>
+            </div>
+            <Badge variant="secondary">{totalOpenTasks} abiertas</Badge>
+          </div>
           <div className="space-y-3">
-            {recentAlerts.length === 0 ? (
-              <p className="text-muted-foreground">No hay alertas recientes</p>
+            {pendingTasks.length === 0 ? (
+              <p className="text-muted-foreground">No hay tareas pendientes</p>
             ) : (
-              recentAlerts.map(alert => {
-                const patient = allPatients.find(p => p.id === alert.patientId);
-                const alertConfig = {
-                  'stay-deviation': { icon: TrendingUp, color: 'text-orange-600' },
-                  'social-risk': { icon: Users, color: 'text-red-600' },
-                  'financial-risk': { icon: AlertTriangle, color: 'text-yellow-600' }
-                };
-                const config = alertConfig[alert.type];
-                const Icon = config.icon;
-
+              pendingTasks.map(task => {
+                const isOverdue = task.dueDate && new Date(task.dueDate) < new Date();
                 return (
-                  <Alert key={alert.id} className="border-l-4" style={{ borderLeftColor: alert.severity === 'high' ? '#dc2626' : '#eab308' }}>
-                    <Icon className={`w-4 h-4 ${config.color}`} />
-                    <AlertDescription>
-                      <p>{patient?.name}</p>
-                      <p className="text-muted-foreground">{alert.message}</p>
-                    </AlertDescription>
-                  </Alert>
+                  <div 
+                    key={task.id} 
+                    className="flex items-start gap-3 p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                  >
+                    <Circle className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{task.title}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <Badge 
+                          variant="outline"
+                          className={
+                            task.priority === 'high' ? 'bg-red-50 text-red-700 border-red-200' :
+                            task.priority === 'medium' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                            'bg-blue-50 text-blue-700 border-blue-200'
+                          }
+                        >
+                          {task.priority === 'high' ? 'Alta' : task.priority === 'medium' ? 'Media' : 'Baja'}
+                        </Badge>
+                        {task.assignedTo && task.assignedTo !== 'Sin asignar' && (
+                          <span className="text-xs text-muted-foreground">{task.assignedTo}</span>
+                        )}
+                        {task.dueDate && (
+                          <span className={`text-xs flex items-center gap-1 ${isOverdue ? 'text-red-600' : 'text-muted-foreground'}`}>
+                            <Calendar className="w-3 h-3" />
+                            {new Date(task.dueDate).toLocaleDateString('es-ES')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 );
               })
             )}
@@ -215,26 +257,7 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
         </Card>
       </div>
 
-      {/* Distribution by Service */}
-      <Card className="p-6">
-        <h3 className="mb-4">Distribución por Servicio</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {Array.from(new Set(allPatients.map(p => p.service))).map(service => {
-            const count = allPatients.filter(p => p.service === service).length;
-            const highRiskCount = allPatients.filter(p => p.service === service && p.riskLevel === 'high').length;
-            
-            return (
-              <div key={service} className="border rounded-lg p-4">
-                <p className="text-muted-foreground">{service}</p>
-                <p className="mt-2">{count} pacientes</p>
-                {highRiskCount > 0 && (
-                  <p className="text-red-600 mt-1">{highRiskCount} alto riesgo</p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </Card>
+      
     </div>
   );
 }

@@ -1,12 +1,13 @@
 from datetime import datetime
 from uuid import UUID
 from enum import Enum
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentType(str, Enum):
-    """Enum for document types"""
+    """Enum for patient document types"""
     MEDICAL_REPORT = "medical_report"
     LAB_RESULT = "lab_result"
     PRESCRIPTION = "prescription"
@@ -42,3 +43,13 @@ class PatientDocument(PatientDocumentBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+class PatientDocumentResponse(BaseModel):
+    """Response format for the frontend"""
+    id: str
+    patientId: str
+    name: str
+    type: str
+    uploadedBy: str
+    uploadedAt: str
+    url: str

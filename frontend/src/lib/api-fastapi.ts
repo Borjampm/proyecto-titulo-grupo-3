@@ -29,6 +29,8 @@ import {
   PaginatedResponse,
   PatientFilters,
   ExcelImportResult,
+  Worker,
+  WorkerSimple,
 } from '../types';
 
 // =============================================================================
@@ -281,12 +283,20 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
   const age = patient.birth_date ? calculateAge(patient.birth_date) : 0;
   const daysInStay = calculateDaysInStay(episode.admission_at, episode.discharge_at);
 
-  // Determinar nivel de riesgo basado en días de estadía
-  let riskLevel: 'low' | 'medium' | 'high' = 'low';
-  if (daysInStay > 10) {
-    riskLevel = 'high';
-  } else if (daysInStay > 5) {
-    riskLevel = 'medium';
+  // Determinar nivel de riesgo basado en desviación de GRD
+  // Si no hay GRD, el nivel de riesgo es desconocido
+  let riskLevel: 'low' | 'medium' | 'high' | 'unknown' = 'unknown';
+  const grdExpectedDays = episode.grd_expected_days;
+  
+  if (grdExpectedDays !== null && grdExpectedDays !== undefined) {
+    const deviation = daysInStay - grdExpectedDays;
+    if (deviation > 5) {
+      riskLevel = 'high';
+    } else if (deviation > 2) {
+      riskLevel = 'medium';
+    } else {
+      riskLevel = 'low';
+    }
   }
 
   // Determinar estado del caso
@@ -321,11 +331,10 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
     admissionDate: episode.admission_at,
     dischargeDate: episode.discharge_at || undefined,
     diagnosis: 'N/A', // TODO: Obtener del episodio cuando esté disponible
-    grg: 'N/A', // TODO: Obtener del episodio cuando esté disponible
+    grg: episode.grd_expected_days ? `${episode.grd_expected_days} días` : 'Sin GRD',
     daysInStay: daysInStay,
-    expectedDays: episode.expected_discharge ?
-      Math.ceil((new Date(episode.expected_discharge).getTime() - new Date(episode.admission_at).getTime()) / (1000 * 60 * 60 * 24)) :
-      7, // Default 7 días
+    // Use GRD expected days if available, null if no GRD data
+    expectedDays: episode.grd_expected_days ?? null,
     responsible: 'N/A', // TODO: Obtener del episodio cuando esté disponible
     prevision: undefined,
     contactNumber: undefined,
@@ -345,6 +354,7 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
  * Transforma un TaskInstance de FastAPI a Task del frontend
  */
 function transformTaskInstanceToTask(taskInstance: any, episodeId?: string): Task {
+  const assignedWorker = taskInstance.assigned_worker;
   return {
     id: taskInstance.id,
     patientId: episodeId || taskInstance.episode_id,
@@ -352,7 +362,13 @@ function transformTaskInstanceToTask(taskInstance: any, episodeId?: string): Tas
     description: taskInstance.description ?? null,
     status: mapTaskStatus(taskInstance.status),
     priority: mapPriority(taskInstance.priority),
-    assignedTo: 'Sin asignar', // TODO: Implementar cuando esté disponible
+    assignedTo: assignedWorker?.name || 'Sin asignar',
+    assignedToId: taskInstance.assigned_to_id || undefined,
+    assignedWorker: assignedWorker ? {
+      id: assignedWorker.id,
+      name: assignedWorker.name,
+      role: assignedWorker.role
+    } : undefined,
     createdBy: 'Sistema', // TODO: Implementar cuando esté disponible
     createdAt: taskInstance.created_at,
     dueDate: taskInstance.due_date || undefined,
@@ -413,13 +429,22 @@ function transformHistoryEventToTimelineEvent(event: any, episodeId: string): Ti
       type = 'status-change';
   }
 
+  // Determine author for task events - prioritize assigned worker name
+  let author = 'Sistema';
+  if (type === 'task-created' || type === 'task-completed' || type === 'task-updated') {
+    // For task events, use assigned worker name if available
+    author = event.metadata?.assigned_worker_name || event.metadata?.changed_by || 'Sin asignar';
+  } else {
+    author = event.metadata?.user_name || event.metadata?.changed_by || 'Sistema';
+  }
+
   return {
     id: `${episodeId}_${event.event_date}_${Math.random().toString(36).substr(2, 9)}`,
     patientId: episodeId,
     type: type,
     timestamp: event.event_date,
-    author: event.metadata?.user_name || event.metadata?.changed_by || 'Sistema',
-    role: 'coordinator',
+    author: author,
+    role: type.startsWith('task-') ? undefined : 'coordinator',
     title: title,
     description: description,
     relatedId: event.metadata?.related_id,
@@ -517,7 +542,7 @@ export async function getClinicalEpisodes(filters?: PatientFilters): Promise<Pag
       if (a.caseStatus === 'open' && b.caseStatus === 'closed') return -1;
       if (a.caseStatus === 'closed' && b.caseStatus === 'open') return 1;
 
-      const riskOrder = { high: 0, medium: 1, low: 2 };
+      const riskOrder: Record<string, number> = { high: 0, medium: 1, low: 2, unknown: 3 };
       return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
     });
 
@@ -577,7 +602,7 @@ export async function getClinicalEpisodes(filters?: PatientFilters): Promise<Pag
     if (a.caseStatus === 'open' && b.caseStatus === 'closed') return -1;
     if (a.caseStatus === 'closed' && b.caseStatus === 'open') return 1;
 
-    const riskOrder = { high: 0, medium: 1, low: 2 };
+    const riskOrder: Record<string, number> = { high: 0, medium: 1, low: 2, unknown: 3 };
     return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
   });
 
@@ -655,6 +680,14 @@ export async function deleteClinicalEpisode(id: string): Promise<void> {
   throw new Error('Eliminar paciente no está disponible aún');
 }
 
+/**
+ * PATCH /clinical-episodes/{id}/close
+ * Closes a clinical episode (marks it as discharged)
+ */
+export async function closeEpisode(id: string): Promise<void> {
+  await apiClient.patch(`/clinical-episodes/${id}/close`, {});
+}
+
 // =============================================================================
 // ALERTAS
 // =============================================================================
@@ -713,12 +746,39 @@ export async function getPatientTasks(patientId: string): Promise<Task[]> {
 }
 
 /**
- * GET /tasks
- * Obtiene todas las tareas (opcionalmente filtradas por usuario)
+ * GET /task-instances/
+ * Obtiene todas las tareas con filtros opcionales
  */
-export async function getAllTasks(assignedTo?: string): Promise<Task[]> {
-  // TODO: El backend no tiene este endpoint global aún
-  return [];
+export async function getAllTasks(options?: {
+  statusFilter?: string;
+  assignedToId?: string;
+  openOnly?: boolean;
+  orderByDueDate?: boolean;
+}): Promise<Task[]> {
+  if (config.USE_MOCK_DATA) {
+    return mockTasks;
+  }
+
+  const params = new URLSearchParams();
+  
+  if (options?.statusFilter) {
+    params.append('status_filter', options.statusFilter);
+  }
+  if (options?.assignedToId) {
+    params.append('assigned_to_id', options.assignedToId);
+  }
+  if (options?.openOnly !== undefined) {
+    params.append('open_only', options.openOnly.toString());
+  }
+  if (options?.orderByDueDate !== undefined) {
+    params.append('order_by_due_date', options.orderByDueDate.toString());
+  }
+
+  const queryString = params.toString();
+  const endpoint = `/task-instances/${queryString ? `?${queryString}` : ''}`;
+  const taskInstances = await apiClient.get<any[]>(endpoint);
+
+  return taskInstances.map(ti => transformTaskInstanceToTask(ti));
 }
 
 /**
@@ -740,7 +800,7 @@ export async function createTask(
     return newTask;
   }
 
-  const taskCreate = {
+  const taskCreate: any = {
     episode_id: patientId,
     task_definition_id: '00000000-0000-0000-0000-000000000000', // TODO: Obtener ID real
     title: task.title,
@@ -749,6 +809,11 @@ export async function createTask(
     priority: mapPriorityToBackend(task.priority),
     status: mapTaskStatusToBackend(task.status),
   };
+
+  // Add assigned_to_id if provided
+  if (task.assignedToId) {
+    taskCreate.assigned_to_id = task.assignedToId;
+  }
 
   const created = await apiClient.post<any>('/task-instances/', taskCreate);
 
@@ -767,6 +832,7 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
   if (updates.dueDate !== undefined) taskUpdate.due_date = updates.dueDate;
   if (updates.priority !== undefined) taskUpdate.priority = mapPriorityToBackend(updates.priority);
   if (updates.status !== undefined) taskUpdate.status = mapTaskStatusToBackend(updates.status);
+  if (updates.assignedToId !== undefined) taskUpdate.assigned_to_id = updates.assignedToId || null;
 
   const updated = await apiClient.patch<any>(`/task-instances/${id}`, taskUpdate);
 
@@ -786,20 +852,20 @@ export async function deleteTask(id: string): Promise<void> {
 // =============================================================================
 
 /**
- * GET /patients/:patientId/documents
+ * GET /documents/patient/:patientId
  * Obtiene todos los documentos de un paciente
- * NOTA: No implementado en el backend aún
  */
 export async function getPatientDocuments(patientId: string): Promise<Document[]> {
   if (config.USE_MOCK_DATA) {
     return mockDocuments.filter((d) => d.patientId === patientId);
   }
-  // TODO: Implementar cuando el backend tenga documentos
-  return [];
+
+  const endpoint = `/documents/patient/${patientId}`;
+  return await apiClient.get<Document[]>(endpoint);
 }
 
 /**
- * POST /patients/:patientId/documents
+ * POST /documents/patient/:patientId
  * Sube un documento para un paciente
  */
 export async function uploadDocument(
@@ -807,8 +873,26 @@ export async function uploadDocument(
   file: File,
   uploadedBy: string
 ): Promise<Document> {
-  // TODO: Implementar cuando el backend tenga documentos
-  throw new Error('Subir documentos no está disponible aún');
+  if (config.USE_MOCK_DATA) {
+    const newDocument: Document = {
+      id: 'doc_' + Date.now(),
+      patientId,
+      name: file.name,
+      type: file.type,
+      uploadedBy,
+      uploadedAt: new Date().toISOString(),
+      url: URL.createObjectURL(file),
+    };
+    mockDocuments.push(newDocument);
+    return newDocument;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('uploaded_by', uploadedBy);
+
+  const endpoint = `/documents/patient/${patientId}`;
+  return await apiClient.uploadFile<Document>(endpoint, formData);
 }
 
 /**
@@ -816,17 +900,24 @@ export async function uploadDocument(
  * Elimina un documento
  */
 export async function deleteDocument(id: string): Promise<void> {
-  // TODO: Implementar cuando el backend tenga documentos
-  throw new Error('Eliminar documentos no está disponible aún');
+  if (config.USE_MOCK_DATA) {
+    const index = mockDocuments.findIndex(d => d.id === id);
+    if (index !== -1) {
+      mockDocuments.splice(index, 1);
+    }
+    return;
+  }
+
+  await apiClient.delete(`/documents/${id}`);
 }
 
 /**
  * GET /documents/:id/download
  * Descarga un documento
  */
-export async function downloadDocument(id: string): Promise<Blob> {
-  // TODO: Implementar cuando el backend tenga documentos
-  throw new Error('Descargar documentos no está disponible aún');
+export async function downloadDocument(id: string): Promise<string> {
+  // Return the download URL for the document
+  return `${config.BACKEND_URL}/documents/${id}/download`;
 }
 
 // =============================================================================
@@ -889,50 +980,28 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     page++;
   }
   
-  const episodes = allEpisodes;
+  // Filter to only include open cases - each episode is a "case"
+  const openCases = allEpisodes.filter(p => p.caseStatus === 'open');
+  const totalPatients = openCases.length;
+  
+  const highRiskPatients = openCases.filter(p => p.riskLevel === 'high').length;
+  const mediumRiskPatients = openCases.filter(p => p.riskLevel === 'medium').length;
+  const lowRiskPatients = openCases.filter(p => p.riskLevel === 'low').length;
 
-  // Agrupar episodios por paciente único (usando patientId)
-  // Para cada paciente, usar el episodio más reciente (mayor score social si hay empate)
-  const patientMap = new Map<string, typeof episodes[0]>();
-  
-  for (const episode of episodes) {
-    const patientId = episode.patientId || episode.id;
-    const existing = patientMap.get(patientId);
-    
-    if (!existing) {
-      patientMap.set(patientId, episode);
-    } else {
-      // Mantener el episodio con mayor días de estadía (más reciente/activo)
-      // o con score social si el actual tiene y el existente no
-      const existingHasScore = existing.socialScore !== null && existing.socialScore !== undefined;
-      const currentHasScore = episode.socialScore !== null && episode.socialScore !== undefined;
-      
-      if (currentHasScore && !existingHasScore) {
-        patientMap.set(patientId, episode);
-      } else if (episode.daysInStay > existing.daysInStay) {
-        patientMap.set(patientId, episode);
-      }
-    }
-  }
-  
-  const uniquePatients = Array.from(patientMap.values());
-  const totalPatients = uniquePatients.length;
-  
-  const highRiskPatients = uniquePatients.filter(p => p.riskLevel === 'high').length;
-  const mediumRiskPatients = uniquePatients.filter(p => p.riskLevel === 'medium').length;
-  const lowRiskPatients = uniquePatients.filter(p => p.riskLevel === 'low').length;
-
-  // Calcular promedio de días de estadía
-  const totalDays = uniquePatients.reduce((sum, p) => sum + p.daysInStay, 0);
+  // Calcular promedio de días de estadía (solo casos abiertos)
+  const totalDays = openCases.reduce((sum, p) => sum + p.daysInStay, 0);
   const averageStayDays = totalPatients > 0 ? Math.round(totalDays / totalPatients) : 0;
 
-  // Calcular desviaciones (pacientes con días de estadía mayor a los esperados)
-  const deviations = uniquePatients.filter(p => p.daysInStay > p.expectedDays).length;
+  // Calcular desviaciones (casos con días de estadía mayor a los esperados, solo casos abiertos con GRD)
+  const deviations = openCases.filter(p => p.expectedDays !== null && p.daysInStay > p.expectedDays).length;
 
-  // Calcular estadísticas de riesgo social (solo pacientes únicos)
-  const highSocialRisk = uniquePatients.filter(p => (p.socialScore ?? -1) > 10).length;
-  const mediumSocialRisk = uniquePatients.filter(p => (p.socialScore ?? -1) >= 6 && (p.socialScore ?? -1) <= 10).length;
-  const lowSocialRisk = uniquePatients.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore <= 5).length;
+  // Calcular estadísticas de riesgo social (solo casos abiertos)
+  // High: score > 10 (same as score >= 11)
+  const highSocialRisk = openCases.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore >= 11).length;
+  // Medium: score 6-10
+  const mediumSocialRisk = openCases.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore >= 6 && p.socialScore <= 10).length;
+  // Low: score 0-5
+  const lowSocialRisk = openCases.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore >= 0 && p.socialScore <= 5).length;
 
   return {
     totalPatients,
@@ -1074,6 +1143,31 @@ export async function importGestionEstadiaFromExcel(file: File): Promise<ExcelIm
   };
 }
 
+/**
+ * POST /excel/upload-grd
+ * Importa datos de GRD (días esperados de estadía) desde archivo Excel
+ * 
+ * Expects a file with "egresos 2024-2025" sheet containing:
+ * - Episodio CMBD: Episode identifier
+ * - Estancia Norma GRD: Expected stay days from GRD norm
+ */
+export async function importGrdFromExcel(file: File): Promise<ExcelImportResult & { debugDbIds?: string[]; debugFileIds?: string[] }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await apiClient.uploadFile<any>('/excel/upload-grd', formData);
+
+  return {
+    success: response.status === 'success',
+    imported: response.episodes_updated || 0,
+    errors: response.errors || [],
+    missingCount: response.missing_count || 0,
+    missingIds: response.missing_ids || [],
+    debugDbIds: response.debug_sample_db_ids || [],
+    debugFileIds: response.debug_sample_file_ids || [],
+  };
+}
+
 // =============================================================================
 // SERVICIOS CLÍNICOS
 // =============================================================================
@@ -1092,6 +1186,67 @@ export async function getClinicalServices(): Promise<string[]> {
     'Geriatría',
     'Neurología',
   ];
+}
+
+// =============================================================================
+// TRABAJADORES (WORKERS)
+// =============================================================================
+
+/**
+ * GET /workers/
+ * Obtiene la lista de trabajadores
+ */
+export async function getWorkers(activeOnly: boolean = true): Promise<Worker[]> {
+  const params = new URLSearchParams();
+  params.append('active_only', activeOnly.toString());
+  
+  const endpoint = `/workers/?${params.toString()}`;
+  return await apiClient.get<Worker[]>(endpoint);
+}
+
+/**
+ * GET /workers/simple
+ * Obtiene la lista simplificada de trabajadores (para dropdowns)
+ */
+export async function getWorkersSimple(): Promise<WorkerSimple[]> {
+  return await apiClient.get<WorkerSimple[]>('/workers/simple');
+}
+
+/**
+ * GET /workers/{worker_id}
+ * Obtiene un trabajador por ID
+ */
+export async function getWorker(id: string): Promise<Worker> {
+  return await apiClient.get<Worker>(`/workers/${id}`);
+}
+
+/**
+ * POST /workers/
+ * Crea un nuevo trabajador
+ */
+export async function createWorker(worker: {
+  name: string;
+  email?: string;
+  role?: string;
+  department?: string;
+}): Promise<Worker> {
+  return await apiClient.post<Worker>('/workers/', worker);
+}
+
+/**
+ * PATCH /workers/{worker_id}
+ * Actualiza un trabajador
+ */
+export async function updateWorker(id: string, updates: Partial<Worker>): Promise<Worker> {
+  return await apiClient.patch<Worker>(`/workers/${id}`, updates);
+}
+
+/**
+ * DELETE /workers/{worker_id}
+ * Elimina (desactiva) un trabajador
+ */
+export async function deleteWorker(id: string): Promise<void> {
+  await apiClient.delete(`/workers/${id}`);
 }
 
 // Exportar el cliente API para uso avanzado si se necesita

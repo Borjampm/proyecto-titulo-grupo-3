@@ -66,6 +66,10 @@ class ClinicalEpisode(Base):
         nullable=True,
         index=True,
     )
+    grd_expected_days: Mapped[int] = mapped_column(
+        nullable=True,
+        comment="Expected stay days from GRD (Estancia Norma GRD)"
+    )
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now()

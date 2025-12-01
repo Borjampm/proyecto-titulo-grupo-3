@@ -9,3 +9,4 @@ from .task_definition import TaskDefinition
 from .task_instance import TaskInstance, TaskStatus
 from .task_status_history import TaskStatusHistory
 from .social_score_history import SocialScoreHistory
+from .worker import Worker

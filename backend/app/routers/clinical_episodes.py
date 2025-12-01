@@ -243,6 +243,8 @@ async def list_clinical_episodes(
                 "status": episode.status,
                 "bed_id": episode.bed_id,
                 "admission_at": episode.admission_at,
+                "episode_identifier": episode.episode_identifier,
+                "grd_expected_days": episode.grd_expected_days,
                 "created_at": episode.created_at,
                 "updated_at": episode.updated_at,
                 "patient": episode.patient if include_patient else None,
@@ -306,6 +308,36 @@ async def create_referral(
     return episode
 
 
+@router.patch("/{episode_id}/close", response_model=ClinicalEpisode)
+async def close_episode(
+    episode_id: UUID,
+    session: AsyncSession = Depends(get_session)
+) -> ClinicalEpisode:
+    """
+    Close a clinical episode (mark as discharged).
+    
+    This sets the episode status to DISCHARGED and sets the discharge_at timestamp.
+    """
+    result = await session.execute(
+        select(ClinicalEpisodeModel).where(ClinicalEpisodeModel.id == episode_id)
+    )
+    episode = result.scalar_one_or_none()
+    
+    if not episode:
+        raise HTTPException(status_code=404, detail="Clinical episode not found")
+    
+    if episode.status == EpisodeStatus.DISCHARGED:
+        raise HTTPException(status_code=400, detail="Episode is already closed")
+    
+    episode.status = EpisodeStatus.DISCHARGED
+    episode.discharge_at = datetime.utcnow()
+    
+    await session.commit()
+    await session.refresh(episode)
+    
+    return episode
+
+
 # IMPORTANTE: Esto siempre tiene que ir al final de los endpoints porque si no una ruta se puede mappear a una ID de episodio.
 @router.get("/{episode_id}", response_model=Union[ClinicalEpisodeWithIncludes, ClinicalEpisodeWithPatient, ClinicalEpisode])
 async def get_clinical_episode(
@@ -358,6 +390,8 @@ async def get_clinical_episode(
             "status": episode.status,
             "bed_id": episode.bed_id,
             "admission_at": episode.admission_at,
+            "episode_identifier": episode.episode_identifier,
+            "grd_expected_days": episode.grd_expected_days,
             "created_at": episode.created_at,
             "updated_at": episode.updated_at,
             "patient": episode.patient if include_patient else None,
@@ -430,7 +464,9 @@ async def get_episode_history(
     
     # 3. Task creation events
     tasks_result = await session.execute(
-        select(TaskInstance).where(TaskInstance.episode_id == episode_id)
+        select(TaskInstance)
+        .options(selectinload(TaskInstance.assigned_worker))
+        .where(TaskInstance.episode_id == episode_id)
     )
     tasks = tasks_result.scalars().all()
     
@@ -438,6 +474,9 @@ async def get_episode_history(
     task_map = {str(task.id): task for task in tasks}
     
     for task in tasks:
+        # Get assigned worker name
+        assigned_worker_name = task.assigned_worker.name if task.assigned_worker else None
+        
         # Task creation event
         events.append(HistoryEvent(
             event_type=HistoryEventType.TASK_CREATED,
@@ -448,7 +487,8 @@ async def get_episode_history(
                 "title": task.title,
                 "description": task.description,
                 "initial_status": task.status.value,
-                "priority": task.priority
+                "priority": task.priority,
+                "assigned_worker_name": assigned_worker_name
             }
         ))
     
@@ -467,6 +507,8 @@ async def get_episode_history(
         for status_change in status_changes:
             task = task_map.get(str(status_change.task_id))
             task_title = task.title if task else "Unknown Task"
+            # Get assigned worker name from the task
+            assigned_worker_name = task.assigned_worker.name if task and task.assigned_worker else None
             
             # Build description based on old and new status
             if status_change.old_status is None:
@@ -484,7 +526,8 @@ async def get_episode_history(
                     "old_status": status_change.old_status.value if status_change.old_status else None,
                     "new_status": status_change.new_status.value,
                     "changed_by": status_change.changed_by,
-                    "notes": status_change.notes
+                    "notes": status_change.notes,
+                    "assigned_worker_name": assigned_worker_name
                 }
             ))
     

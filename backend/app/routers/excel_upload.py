@@ -209,6 +209,66 @@ async def upload_social_scores(
         # Clean up temporary file
         Path(tmp_file_path).unlink(missing_ok=True)
 
+@router.post("/upload-grd")
+async def upload_grd(
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session)
+) -> Dict[str, Any]:
+    """
+    Upload GRD (expected stay days) data from Excel file.
+    
+    Expected file: Excel file with "egresos 2024-2025" sheet containing:
+    - Episodio CMBD: Episode identifier to match
+    - Estancia Norma GRD: Expected stay days from GRD norm
+    
+    Returns:
+        Dictionary with upload statistics (episodes_updated, status, message)
+    """
+    # Validate file type
+    if not file.filename.endswith(('.xlsx', '.xls', '.xlsm')):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Please upload an Excel file (.xlsx, .xls, .xlsm)"
+        )
+    
+    # Save uploaded file temporarily
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_file_path = tmp_file.name
+        
+        # Upload GRD data using the ExcelUploader
+        uploader = ExcelUploader(session)
+        result = await uploader.upload_grd_from_excel(tmp_file_path)
+        
+        response = {
+            "status": "success",
+            "message": f"Successfully updated {result['count']} episodes with GRD data",
+            "episodes_updated": result['count'],
+            "missing_count": result['missing_count'],
+            "missing_ids": result['missing_ids'],
+        }
+        
+        # Add debug info if available
+        if 'sample_db_ids' in result:
+            response['debug_sample_db_ids'] = result['sample_db_ids']
+        if 'sample_file_ids' in result:
+            response['debug_sample_file_ids'] = result['sample_file_ids']
+        
+        return response
+    
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading GRD data: {str(e)}"
+        )
+    
+    finally:
+        # Clean up temporary file
+        Path(tmp_file_path).unlink(missing_ok=True)
+
+
 @router.post("/upload-all")
 async def upload_all(
     beds_file: UploadFile = File(..., description="Camas NWP1 Excel file"),

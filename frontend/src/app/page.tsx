@@ -10,12 +10,14 @@ import { PatientList } from '../components/PatientList';
 import { PatientDetail } from '../components/PatientDetail';
 import { ReferralForm } from '../components/ReferralForm';
 import { DataUpload } from '../components/DataUpload';
+import { TasksView } from '../components/TasksView';
 import { Patient } from '../types';
 import { 
   LayoutDashboard, 
   Users, 
   FileText, 
-  Upload
+  Upload,
+  ClipboardList
 } from 'lucide-react';
 import { cn } from '../components/ui/utils';
 import { Toaster } from '../components/ui/sonner';
@@ -23,7 +25,7 @@ import { Toaster } from '../components/ui/sonner';
 // Importar el adaptador de FastAPI
 import * as apiFastAPI from '../lib/api-fastapi';
 
-type View = 'dashboard' | 'patients' | 'referral' | 'upload';
+type View = 'dashboard' | 'patients' | 'tasks' | 'referral' | 'upload';
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -33,6 +35,8 @@ function AppContent() {
   const [patientListFilters, setPatientListFilters] = useState<{
     sortBy?: string;
     socialScoreRange?: [number, number];
+    caseStatus?: string;
+    riskLevel?: string;
   }>({});
 
   // Mostrar pantalla de carga mientras se verifica la autenticación
@@ -48,7 +52,7 @@ function AppContent() {
   const navigation = [
     { id: 'dashboard' as View, name: 'Panel de Control', icon: LayoutDashboard },
     { id: 'patients' as View, name: 'Gestión de Casos', icon: Users },
-    { id: 'referral' as View, name: 'Derivar Paciente', icon: FileText },
+    { id: 'tasks' as View, name: 'Tareas', icon: ClipboardList },
     { id: 'upload' as View, name: 'Carga de Datos', icon: Upload },
   ];
 
@@ -60,7 +64,7 @@ function AppContent() {
     setSelectedPatient(null);
   };
 
-  const handleNavigateToPatients = (filters: { sortBy: string; socialScoreRange: [number, number] }) => {
+  const handleNavigateToPatients = (filters: { sortBy?: string; socialScoreRange?: [number, number]; caseStatus?: string; riskLevel?: string }) => {
     setPatientListFilters(filters);
     setCurrentView('patients');
   };
@@ -72,16 +76,20 @@ function AppContent() {
 
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard onNavigateToPatients={handleNavigateToPatients} />;
+        return <Dashboard onNavigateToPatients={handleNavigateToPatients} onSelectPatient={handleSelectPatient} />;
       case 'patients':
         return (
           <PatientList 
             onSelectPatient={handleSelectPatient} 
             initialSortBy={patientListFilters.sortBy}
             initialSocialScoreRange={patientListFilters.socialScoreRange}
+            initialCaseStatus={patientListFilters.caseStatus}
+            initialRiskLevel={patientListFilters.riskLevel}
             key={JSON.stringify(patientListFilters)}
           />
         );
+      case 'tasks':
+        return <TasksView />;
       case 'referral':
         return <ReferralForm />;
       case 'upload':

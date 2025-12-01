@@ -1,10 +1,11 @@
-export type RiskLevel = 'low' | 'medium' | 'high';
+export type RiskLevel = 'low' | 'medium' | 'high' | 'unknown';
 export type PatientStatus = 'active' | 'pending-discharge' | 'discharged';
 export type CaseStatus = 'open' | 'closed';
 export type UserRole = 'coordinator' | 'social-worker' | 'analyst' | 'chief' | 'clinical-service';
 
 export interface Patient {
   id: string;
+  patientId?: string; // ID del paciente real (diferente del episode ID)
   rut?: string; // RUT del paciente
   name: string;
   age: number;
@@ -16,7 +17,7 @@ export interface Patient {
   prevision?: string; // Previsión de salud (FONASA, ISAPRE, etc.)
   contactNumber?: string; // Número de contacto
   daysInStay: number;
-  expectedDays: number;
+  expectedDays: number | null; // null when no GRD data available
   riskLevel: RiskLevel;
   socialRisk: boolean;
   financialRisk: boolean;
@@ -72,6 +73,23 @@ export interface DashboardStats {
 export type TaskStatus = 'pending' | 'in-progress' | 'completed';
 export type TaskPriority = 'low' | 'medium' | 'high';
 
+export interface Worker {
+  id: string;
+  name: string;
+  email?: string;
+  role?: string;
+  department?: string;
+  active: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface WorkerSimple {
+  id: string;
+  name: string;
+  role?: string;
+}
+
 export interface Task {
   id: string;
   patientId: string;
@@ -80,6 +98,8 @@ export interface Task {
   status: TaskStatus;
   priority: TaskPriority;
   assignedTo: string;
+  assignedToId?: string;
+  assignedWorker?: WorkerSimple;
   createdBy: string;
   createdAt: string;
   completedAt?: string;

@@ -5,6 +5,8 @@ from typing import Dict, Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.worker import WorkerSimple
+
 
 class TaskStatus(str, Enum):
     """Enum for task instance status"""
@@ -23,6 +25,7 @@ class TaskInstanceBase(BaseModel):
     priority: int = Field(..., ge=1, le=5)
     status: TaskStatus = TaskStatus.PENDING
     meta_json: Optional[Dict[str, Any]] = None
+    assigned_to_id: Optional[UUID] = None
 
 
 class TaskInstanceCreate(TaskInstanceBase):
@@ -39,6 +42,7 @@ class TaskInstanceUpdate(BaseModel):
     priority: Optional[int] = Field(None, ge=1, le=5)
     status: Optional[TaskStatus] = None
     meta_json: Optional[Dict[str, Any]] = None
+    assigned_to_id: Optional[UUID] = None
 
 
 class TaskInstance(TaskInstanceBase):
@@ -47,5 +51,6 @@ class TaskInstance(TaskInstanceBase):
     episode_id: UUID
     created_at: datetime
     updated_at: datetime
+    assigned_worker: Optional[WorkerSimple] = None
 
     model_config = ConfigDict(from_attributes=True)

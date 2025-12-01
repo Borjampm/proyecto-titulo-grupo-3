@@ -22,6 +22,7 @@ class ClinicalEpisodeBase(BaseModel):
     bed_id: Optional[UUID] = None
     admission_at: datetime = Field(default_factory=datetime.utcnow)
     episode_identifier: Optional[str] = None
+    grd_expected_days: Optional[int] = None  # Expected stay days from GRD
 
 
 class ClinicalEpisodeCreate(ClinicalEpisodeBase):
