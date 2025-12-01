@@ -178,7 +178,7 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
 
         <Separator className="my-4" />
 
-        <div className={`grid grid-cols-1 ${patient.expectedDays !== null ? 'md:grid-cols-3' : 'md:grid-cols-1'} gap-6`}>
+        <div className={`grid grid-cols-1 ${patient.expectedDays !== null ? 'md:grid-cols-4' : 'md:grid-cols-1'} gap-6`}>
           <div>
             <p className="text-muted-foreground">Días de Estadía</p>
             <p className="mt-1">{patient.daysInStay} días</p>
@@ -188,6 +188,12 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
               <div>
                 <p className="text-muted-foreground">Días Esperados (GRD)</p>
                 <p className="mt-1">{patient.expectedDays} días</p>
+              </div>
+              <div>
+                <p className="text-muted-foreground">Fecha Alta Esperada</p>
+                <p className="mt-1">
+                  {new Date(new Date(patient.admissionDate).getTime() + patient.expectedDays * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES')}
+                </p>
               </div>
               <div>
                 <p className="text-muted-foreground">Desvío</p>
