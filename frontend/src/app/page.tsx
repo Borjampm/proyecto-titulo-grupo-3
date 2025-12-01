@@ -34,6 +34,7 @@ function AppContent() {
     sortBy?: string;
     socialScoreRange?: [number, number];
     caseStatus?: string;
+    riskLevel?: string;
   }>({});
 
   // Mostrar pantalla de carga mientras se verifica la autenticación
@@ -60,7 +61,7 @@ function AppContent() {
     setSelectedPatient(null);
   };
 
-  const handleNavigateToPatients = (filters: { sortBy?: string; socialScoreRange?: [number, number]; caseStatus?: string }) => {
+  const handleNavigateToPatients = (filters: { sortBy?: string; socialScoreRange?: [number, number]; caseStatus?: string; riskLevel?: string }) => {
     setPatientListFilters(filters);
     setCurrentView('patients');
   };
@@ -72,7 +73,7 @@ function AppContent() {
 
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard onNavigateToPatients={handleNavigateToPatients} />;
+        return <Dashboard onNavigateToPatients={handleNavigateToPatients} onSelectPatient={handleSelectPatient} />;
       case 'patients':
         return (
           <PatientList 
@@ -80,6 +81,7 @@ function AppContent() {
             initialSortBy={patientListFilters.sortBy}
             initialSocialScoreRange={patientListFilters.socialScoreRange}
             initialCaseStatus={patientListFilters.caseStatus}
+            initialRiskLevel={patientListFilters.riskLevel}
             key={JSON.stringify(patientListFilters)}
           />
         );

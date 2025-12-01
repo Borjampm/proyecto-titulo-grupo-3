@@ -17,17 +17,19 @@ interface PatientListProps {
   initialSortBy?: string;
   initialSocialScoreRange?: [number, number];
   initialCaseStatus?: string;
+  initialRiskLevel?: string;
 }
 
 export function PatientList({ 
   onSelectPatient,
   initialSortBy = 'none',
   initialSocialScoreRange = [0, 20],
-  initialCaseStatus = 'open'
+  initialCaseStatus = 'open',
+  initialRiskLevel = 'all'
 }: PatientListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterService, setFilterService] = useState<string>('all');
-  const [filterRisk, setFilterRisk] = useState<string>('all');
+  const [filterRisk, setFilterRisk] = useState<string>(initialRiskLevel);
   const [filterCaseStatus, setFilterCaseStatus] = useState<string>(initialCaseStatus);
   const [sortBy, setSortBy] = useState<string>(initialSortBy);
   // Show advanced options if navigating with a custom social score range
@@ -97,10 +99,22 @@ export function PatientList({
       const scoreB = b.socialScore ?? -1;
       return scoreB - scoreA;
     }
+    if (sortBy === 'deviation') {
+      // Sort by deviation descending (highest deviation first), only for patients with GRD
+      const deviationA = a.expectedDays !== null ? a.daysInStay - a.expectedDays : -Infinity;
+      const deviationB = b.expectedDays !== null ? b.daysInStay - b.expectedDays : -Infinity;
+      return deviationB - deviationA;
+    }
     return 0; // No sorting
   });
 
   const filteredPatients = sortedPatients.filter(patient => {
+    // Filter by deviation when sortBy is 'deviation' - only show patients with GRD and positive deviation
+    if (sortBy === 'deviation') {
+      if (patient.expectedDays === null) return false;
+      if (patient.daysInStay <= patient.expectedDays) return false;
+    }
+    
     // Filter by social score range if customized
     if (socialScoreRange[0] === 0 && socialScoreRange[1] === 20) return true;
     
@@ -177,6 +191,7 @@ export function PatientList({
             <SelectContent>
               <SelectItem value="none">Sin ordenar</SelectItem>
               <SelectItem value="social-score">Puntaje Social</SelectItem>
+              <SelectItem value="deviation">Desviación GRD</SelectItem>
             </SelectContent>
           </Select>
         </div>

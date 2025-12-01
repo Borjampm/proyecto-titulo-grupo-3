@@ -7,10 +7,11 @@ import { getDashboardStats, getAllAlerts, getClinicalEpisodes } from '../lib/api
 import { DashboardStats, Alert as AlertType, Patient } from '../types';
 
 interface DashboardProps {
-  onNavigateToPatients?: (filters: { sortBy?: string; socialScoreRange?: [number, number]; caseStatus?: string }) => void;
+  onNavigateToPatients?: (filters: { sortBy?: string; socialScoreRange?: [number, number]; caseStatus?: string; riskLevel?: string }) => void;
+  onSelectPatient?: (patient: Patient) => void;
 }
 
-export function Dashboard({ onNavigateToPatients }: DashboardProps) {
+export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentAlerts, setRecentAlerts] = useState<AlertType[]>([]);
   const [urgentPatients, setUrgentPatients] = useState<Patient[]>([]);
@@ -74,7 +75,10 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card 
+          className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+          onClick={() => onNavigateToPatients?.({ caseStatus: 'open', riskLevel: 'high' })}
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-muted-foreground">Alto Riesgo</p>
@@ -84,7 +88,10 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card 
+          className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+          onClick={() => onNavigateToPatients?.({ caseStatus: 'open', riskLevel: 'medium' })}
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-muted-foreground">Riesgo Medio</p>
@@ -94,7 +101,10 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
           </div>
         </Card>
 
-        <Card className="p-4">
+        <Card 
+          className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+          onClick={() => onNavigateToPatients?.({ caseStatus: 'open', sortBy: 'deviation' })}
+        >
           <div className="flex items-center justify-between">
             <div>
               <p className="text-muted-foreground">Desviaciones</p>
@@ -169,7 +179,11 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
               <p className="text-muted-foreground">No hay pacientes de alto riesgo</p>
             ) : (
               urgentPatients.map(patient => (
-                <div key={patient.id} className="flex items-center justify-between p-3 border rounded-lg">
+                <div 
+                  key={patient.id} 
+                  className="flex items-center justify-between p-3 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => onSelectPatient?.(patient)}
+                >
                   <div>
                     <p>{patient.name}</p>
                     <p className="text-muted-foreground">{patient.service}</p>
@@ -221,26 +235,7 @@ export function Dashboard({ onNavigateToPatients }: DashboardProps) {
         </Card>
       </div>
 
-      {/* Distribution by Service */}
-      <Card className="p-6">
-        <h3 className="mb-4">Distribución por Servicio</h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {Array.from(new Set(allPatients.map(p => p.service))).map(service => {
-            const count = allPatients.filter(p => p.service === service).length;
-            const highRiskCount = allPatients.filter(p => p.service === service && p.riskLevel === 'high').length;
-            
-            return (
-              <div key={service} className="border rounded-lg p-4">
-                <p className="text-muted-foreground">{service}</p>
-                <p className="mt-2">{count} pacientes</p>
-                {highRiskCount > 0 && (
-                  <p className="text-red-600 mt-1">{highRiskCount} alto riesgo</p>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </Card>
+      
     </div>
   );
 }
