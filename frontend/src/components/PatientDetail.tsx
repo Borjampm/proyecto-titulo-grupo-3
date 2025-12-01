@@ -1,4 +1,4 @@
-import { Patient, Alert, TimelineEvent, Task, Document as DocumentType } from '../types';
+import { Patient, Alert, TimelineEvent, Task, Document as DocumentType, WorkerSimple } from '../types';
 import { Card } from './ui/card';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
@@ -10,7 +10,7 @@ import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Timeline } from './Timeline';
-import { ArrowLeft, Calendar, User, Building, FileText, AlertTriangle, Upload, Clock, ClipboardList, CheckCircle2, Circle } from 'lucide-react';
+import { ArrowLeft, Calendar, User, Building, FileText, AlertTriangle, Upload, Clock, ClipboardList, CheckCircle2, Circle, UserCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { 
   getPatientAlerts, 
@@ -18,7 +18,8 @@ import {
   getPatientTasks,
   getPatientDocuments,
   createTask,
-  updateTask
+  updateTask,
+  getWorkersSimple
 } from '../lib/api-fastapi';
 import { toast } from 'sonner';
 
@@ -28,32 +29,36 @@ interface PatientDetailProps {
 }
 
 export function PatientDetail({ patient, onBack }: PatientDetailProps) {
-  const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignedTo: '' });
+  const [newTask, setNewTask] = useState({ title: '', description: '', priority: 'medium', assignedToId: '', dueDate: '' });
   const [patientAlerts, setPatientAlerts] = useState<Alert[]>([]);
   const [patientTimelineEvents, setPatientTimelineEvents] = useState<TimelineEvent[]>([]);
   const [patientTasks, setPatientTasks] = useState<Task[]>([]);
   const [patientDocuments, setPatientDocuments] = useState<DocumentType[]>([]);
+  const [workers, setWorkers] = useState<WorkerSimple[]>([]);
   const [loading, setLoading] = useState(true);
+  const [filterAssignee, setFilterAssignee] = useState<string>('all');
 
   useEffect(() => {
-    console.log('Episode ID:', patient.medicalIdentifier);
+    console.log('Episode ID:', patient.id);
     loadPatientData();
   }, [patient.id]);
 
   const loadPatientData = async () => {
     try {
       setLoading(true);
-      const [alerts, timeline, tasks, documents] = await Promise.all([
+      const [alerts, timeline, tasks, documents, workersData] = await Promise.all([
         getPatientAlerts(patient.id),
         getPatientTimeline(patient.id),
         getPatientTasks(patient.id),
         getPatientDocuments(patient.id),
+        getWorkersSimple(),
       ]);
       
       setPatientAlerts(alerts);
       setPatientTimelineEvents(timeline);
       setPatientTasks(tasks);
       setPatientDocuments(documents);
+      setWorkers(workersData);
     } catch (error) {
       console.error('Error loading patient data:', error);
       toast.error('Error al cargar datos del paciente');
@@ -65,17 +70,20 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
   const handleAddTask = async () => {
     if (newTask.title.trim()) {
       try {
+        const selectedWorker = workers.find(w => w.id === newTask.assignedToId);
         await createTask(patient.id, {
           title: newTask.title,
           description: newTask.description,
           priority: newTask.priority as any,
           status: 'pending',
-          assignedTo: newTask.assignedTo || 'Sin asignar',
+          assignedTo: selectedWorker?.name || 'Sin asignar',
+          assignedToId: newTask.assignedToId || undefined,
+          dueDate: newTask.dueDate || undefined,
           createdBy: 'Usuario actual',
         });
         
         toast.success('Tarea creada exitosamente');
-        setNewTask({ title: '', description: '', priority: 'medium', assignedTo: '' });
+        setNewTask({ title: '', description: '', priority: 'medium', assignedToId: '', dueDate: '' });
         loadPatientData(); // Recargar datos
       } catch (error) {
         console.error('Error creating task:', error);
@@ -83,6 +91,11 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
       }
     }
   };
+
+  // Filter tasks by assignee
+  const filteredTasks = filterAssignee === 'all' 
+    ? patientTasks 
+    : patientTasks.filter(t => t.assignedToId === filterAssignee);
 
   return (
     <div className="space-y-6">
@@ -345,12 +358,22 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="task-assigned">Asignar a</Label>
-                  <Input
-                    id="task-assigned"
-                    value={newTask.assignedTo}
-                    onChange={(e) => setNewTask({ ...newTask, assignedTo: e.target.value })}
-                    placeholder="Nombre del responsable"
-                  />
+                  <Select 
+                    value={newTask.assignedToId || 'unassigned'} 
+                    onValueChange={(value) => setNewTask({ ...newTask, assignedToId: value === 'unassigned' ? '' : value })}
+                  >
+                    <SelectTrigger id="task-assigned">
+                      <SelectValue placeholder="Seleccionar trabajador" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="unassigned">Sin asignar</SelectItem>
+                      {workers.map((worker) => (
+                        <SelectItem key={worker.id} value={worker.id}>
+                          {worker.name} {worker.role && `(${worker.role})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
               <div className="space-y-2">
@@ -363,18 +386,29 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                   rows={3}
                 />
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="task-priority">Prioridad</Label>
-                <Select value={newTask.priority} onValueChange={(value) => setNewTask({ ...newTask, priority: value })}>
-                  <SelectTrigger id="task-priority">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">Baja</SelectItem>
-                    <SelectItem value="medium">Media</SelectItem>
-                    <SelectItem value="high">Alta</SelectItem>
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="task-priority">Prioridad</Label>
+                  <Select value={newTask.priority} onValueChange={(value) => setNewTask({ ...newTask, priority: value })}>
+                    <SelectTrigger id="task-priority">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="low">Baja</SelectItem>
+                      <SelectItem value="medium">Media</SelectItem>
+                      <SelectItem value="high">Alta</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="task-duedate">Fecha de Vencimiento</Label>
+                  <Input
+                    id="task-duedate"
+                    type="date"
+                    value={newTask.dueDate}
+                    onChange={(e) => setNewTask({ ...newTask, dueDate: e.target.value })}
+                  />
+                </div>
               </div>
               <Button onClick={handleAddTask}>
                 <ClipboardList className="w-4 h-4 mr-2" />
@@ -384,12 +418,30 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
           </Card>
 
           <Card className="p-6">
-            <h4 className="mb-4">Tareas Activas</h4>
+            <div className="flex items-center justify-between mb-4">
+              <h4>Tareas Activas</h4>
+              <div className="flex items-center gap-2">
+                <Label className="text-sm text-muted-foreground">Filtrar:</Label>
+                <Select value={filterAssignee} onValueChange={setFilterAssignee}>
+                  <SelectTrigger className="w-[150px]">
+                    <SelectValue placeholder="Todos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    {workers.map((worker) => (
+                      <SelectItem key={worker.id} value={worker.id}>
+                        {worker.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <div className="space-y-3">
-              {patientTasks.filter(t => t.status !== 'completed').length === 0 ? (
+              {filteredTasks.filter(t => t.status !== 'completed').length === 0 ? (
                 <p className="text-muted-foreground">No hay tareas activas</p>
               ) : (
-                patientTasks.filter(t => t.status !== 'completed').map(task => (
+                filteredTasks.filter(t => t.status !== 'completed').map(task => (
                   <div key={task.id} className="border rounded-lg p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
@@ -415,8 +467,22 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                           >
                             Prioridad {task.priority === 'high' ? 'Alta' : task.priority === 'medium' ? 'Media' : 'Baja'}
                           </Badge>
-                          {task.assignedTo && (
-                            <Badge variant="outline">Asignado a: {task.assignedTo}</Badge>
+                          <Badge variant="outline" className="flex items-center gap-1">
+                            <UserCircle className="w-3 h-3" />
+                            {task.assignedTo}
+                          </Badge>
+                          {task.dueDate && (
+                            <Badge 
+                              variant="outline"
+                              className={
+                                new Date(task.dueDate) < new Date() 
+                                  ? 'bg-red-50 text-red-700 border-red-200' 
+                                  : 'bg-gray-50'
+                              }
+                            >
+                              <Calendar className="w-3 h-3 mr-1" />
+                              {new Date(task.dueDate).toLocaleDateString('es-ES')}
+                            </Badge>
                           )}
                         </div>
                       </div>
@@ -443,12 +509,31 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                             <SelectItem value="completed">Completada</SelectItem>
                           </SelectContent>
                         </Select>
-                        {task.dueDate && (
-                          <div className="text-right">
-                            <p className="text-muted-foreground text-sm">Vencimiento</p>
-                            <p className="text-sm">{new Date(task.dueDate).toLocaleDateString('es-ES')}</p>
-                          </div>
-                        )}
+                        <Select
+                          value={task.assignedToId || 'unassigned'}
+                          onValueChange={async (value) => {
+                            try {
+                              await updateTask(task.id, { assignedToId: value === 'unassigned' ? undefined : value });
+                              toast.success('Asignación actualizada');
+                              loadPatientData();
+                            } catch (error) {
+                              console.error('Error updating task assignee:', error);
+                              toast.error('Error al actualizar asignación');
+                            }
+                          }}
+                        >
+                          <SelectTrigger className="w-[140px]">
+                            <SelectValue placeholder="Asignar..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="unassigned">Sin asignar</SelectItem>
+                            {workers.map((worker) => (
+                              <SelectItem key={worker.id} value={worker.id}>
+                                {worker.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
                   </div>
@@ -460,19 +545,27 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
           <Card className="p-6">
             <h4 className="mb-4">Tareas Completadas</h4>
             <div className="space-y-3">
-              {patientTasks.filter(t => t.status === 'completed').length === 0 ? (
+              {filteredTasks.filter(t => t.status === 'completed').length === 0 ? (
                 <p className="text-muted-foreground">No hay tareas completadas</p>
               ) : (
-                patientTasks.filter(t => t.status === 'completed').map(task => (
+                filteredTasks.filter(t => t.status === 'completed').map(task => (
                   <div key={task.id} className="border rounded-lg p-4 bg-green-50/50">
                     <div className="flex items-start gap-3">
                       <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5" />
                       <div className="flex-1">
                         <h4 className="mb-1">{task.title}</h4>
-                        <p className="text-muted-foreground mb-2">{task.description}</p>
-                        <p className="text-muted-foreground">
-                          Completada el {task.completedAt ? new Date(task.completedAt).toLocaleDateString('es-ES') : 'N/A'}
-                        </p>
+                        {task.description && (
+                          <p className="text-muted-foreground mb-2">{task.description}</p>
+                        )}
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <span>Completada el {task.completedAt ? new Date(task.completedAt).toLocaleDateString('es-ES') : 'N/A'}</span>
+                          {task.assignedTo && task.assignedTo !== 'Sin asignar' && (
+                            <>
+                              <span>•</span>
+                              <span>Por: {task.assignedTo}</span>
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>

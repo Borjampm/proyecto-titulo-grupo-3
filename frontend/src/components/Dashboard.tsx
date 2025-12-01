@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Card } from './ui/card';
-import { Users, AlertTriangle, TrendingUp, Clock, Activity } from 'lucide-react';
+import { Badge } from './ui/badge';
+import { Users, AlertTriangle, TrendingUp, Clock, Activity, ClipboardList, Circle, Calendar } from 'lucide-react';
 import { RiskBadge } from './RiskBadge';
-import { Alert, AlertDescription } from './ui/alert';
-import { getDashboardStats, getAllAlerts, getClinicalEpisodes } from '../lib/api-fastapi';
-import { DashboardStats, Alert as AlertType, Patient } from '../types';
+import { getDashboardStats, getClinicalEpisodes, getAllTasks } from '../lib/api-fastapi';
+import { DashboardStats, Patient, Task } from '../types';
 
 interface DashboardProps {
   onNavigateToPatients?: (filters: { sortBy?: string; socialScoreRange?: [number, number]; caseStatus?: string; riskLevel?: string }) => void;
@@ -13,9 +13,9 @@ interface DashboardProps {
 
 export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardProps) {
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [recentAlerts, setRecentAlerts] = useState<AlertType[]>([]);
+  const [pendingTasks, setPendingTasks] = useState<Task[]>([]);
+  const [totalOpenTasks, setTotalOpenTasks] = useState(0);
   const [urgentPatients, setUrgentPatients] = useState<Patient[]>([]);
-  const [allPatients, setAllPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,17 +25,18 @@ export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardPr
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const [statsData, alertsData, urgentPatientsData, allPatientsData] = await Promise.all([
+      const [statsData, urgentPatientsData, tasksData] = await Promise.all([
         getDashboardStats(),
-        getAllAlerts(),
         getClinicalEpisodes({ riskLevel: 'high', pageSize: 5 }),
-        getClinicalEpisodes({ pageSize: 100 }),
+        getAllTasks({ openOnly: true, orderByDueDate: true }),
       ]);
       
       setStats(statsData);
-      setRecentAlerts(alertsData.slice(0, 5));
       setUrgentPatients(urgentPatientsData.data);
-      setAllPatients(allPatientsData.data);
+      // Filter pending tasks and limit to 5 for display
+      const pending = tasksData.filter(t => t.status === 'pending');
+      setPendingTasks(pending.slice(0, 5));
+      setTotalOpenTasks(tasksData.length);
     } catch (error) {
       console.error('Error loading dashboard:', error);
     } finally {
@@ -203,31 +204,52 @@ export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardPr
           </div>
         </Card>
 
-        {/* Recent Alerts */}
+        {/* Pending Tasks */}
         <Card className="p-6">
-          <h3 className="mb-4">Alertas Recientes</h3>
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-primary" />
+              <h3>Tareas Pendientes</h3>
+            </div>
+            <Badge variant="secondary">{totalOpenTasks} abiertas</Badge>
+          </div>
           <div className="space-y-3">
-            {recentAlerts.length === 0 ? (
-              <p className="text-muted-foreground">No hay alertas recientes</p>
+            {pendingTasks.length === 0 ? (
+              <p className="text-muted-foreground">No hay tareas pendientes</p>
             ) : (
-              recentAlerts.map(alert => {
-                const patient = allPatients.find(p => p.id === alert.patientId);
-                const alertConfig = {
-                  'stay-deviation': { icon: TrendingUp, color: 'text-orange-600' },
-                  'social-risk': { icon: Users, color: 'text-red-600' },
-                  'financial-risk': { icon: AlertTriangle, color: 'text-yellow-600' }
-                };
-                const config = alertConfig[alert.type];
-                const Icon = config.icon;
-
+              pendingTasks.map(task => {
+                const isOverdue = task.dueDate && new Date(task.dueDate) < new Date();
                 return (
-                  <Alert key={alert.id} className="border-l-4" style={{ borderLeftColor: alert.severity === 'high' ? '#dc2626' : '#eab308' }}>
-                    <Icon className={`w-4 h-4 ${config.color}`} />
-                    <AlertDescription>
-                      <p>{patient?.name}</p>
-                      <p className="text-muted-foreground">{alert.message}</p>
-                    </AlertDescription>
-                  </Alert>
+                  <div 
+                    key={task.id} 
+                    className="flex items-start gap-3 p-3 border rounded-lg hover:bg-muted/50 transition-colors"
+                  >
+                    <Circle className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium truncate">{task.title}</p>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <Badge 
+                          variant="outline"
+                          className={
+                            task.priority === 'high' ? 'bg-red-50 text-red-700 border-red-200' :
+                            task.priority === 'medium' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                            'bg-blue-50 text-blue-700 border-blue-200'
+                          }
+                        >
+                          {task.priority === 'high' ? 'Alta' : task.priority === 'medium' ? 'Media' : 'Baja'}
+                        </Badge>
+                        {task.assignedTo && task.assignedTo !== 'Sin asignar' && (
+                          <span className="text-xs text-muted-foreground">{task.assignedTo}</span>
+                        )}
+                        {task.dueDate && (
+                          <span className={`text-xs flex items-center gap-1 ${isOverdue ? 'text-red-600' : 'text-muted-foreground'}`}>
+                            <Calendar className="w-3 h-3" />
+                            {new Date(task.dueDate).toLocaleDateString('es-ES')}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 );
               })
             )}

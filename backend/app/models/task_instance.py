@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from app.models.clinical_episode import ClinicalEpisode
     from app.models.task_definition import TaskDefinition
     from app.models.task_status_history import TaskStatusHistory
+    from app.models.worker import Worker
 
 
 class TaskStatus(enum.Enum):
@@ -61,6 +62,12 @@ class TaskInstance(Base):
         JSONB,
         nullable=True
     )
+    assigned_to_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("workers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True
+    )
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now()
@@ -81,4 +88,9 @@ class TaskInstance(Base):
         back_populates="task_instance",
         cascade="all, delete-orphan",
         order_by="TaskStatusHistory.changed_at"
+    )
+    assigned_worker: Mapped[Optional["Worker"]] = relationship(
+        "Worker",
+        back_populates="assigned_tasks",
+        foreign_keys=[assigned_to_id]
     )

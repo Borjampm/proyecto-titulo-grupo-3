@@ -29,6 +29,8 @@ import {
   PaginatedResponse,
   PatientFilters,
   ExcelImportResult,
+  Worker,
+  WorkerSimple,
 } from '../types';
 
 // =============================================================================
@@ -352,6 +354,7 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
  * Transforma un TaskInstance de FastAPI a Task del frontend
  */
 function transformTaskInstanceToTask(taskInstance: any, episodeId?: string): Task {
+  const assignedWorker = taskInstance.assigned_worker;
   return {
     id: taskInstance.id,
     patientId: episodeId || taskInstance.episode_id,
@@ -359,7 +362,13 @@ function transformTaskInstanceToTask(taskInstance: any, episodeId?: string): Tas
     description: taskInstance.description ?? null,
     status: mapTaskStatus(taskInstance.status),
     priority: mapPriority(taskInstance.priority),
-    assignedTo: 'Sin asignar', // TODO: Implementar cuando esté disponible
+    assignedTo: assignedWorker?.name || 'Sin asignar',
+    assignedToId: taskInstance.assigned_to_id || undefined,
+    assignedWorker: assignedWorker ? {
+      id: assignedWorker.id,
+      name: assignedWorker.name,
+      role: assignedWorker.role
+    } : undefined,
     createdBy: 'Sistema', // TODO: Implementar cuando esté disponible
     createdAt: taskInstance.created_at,
     dueDate: taskInstance.due_date || undefined,
@@ -720,12 +729,39 @@ export async function getPatientTasks(patientId: string): Promise<Task[]> {
 }
 
 /**
- * GET /tasks
- * Obtiene todas las tareas (opcionalmente filtradas por usuario)
+ * GET /task-instances/
+ * Obtiene todas las tareas con filtros opcionales
  */
-export async function getAllTasks(assignedTo?: string): Promise<Task[]> {
-  // TODO: El backend no tiene este endpoint global aún
-  return [];
+export async function getAllTasks(options?: {
+  statusFilter?: string;
+  assignedToId?: string;
+  openOnly?: boolean;
+  orderByDueDate?: boolean;
+}): Promise<Task[]> {
+  if (config.USE_MOCK_DATA) {
+    return mockTasks;
+  }
+
+  const params = new URLSearchParams();
+  
+  if (options?.statusFilter) {
+    params.append('status_filter', options.statusFilter);
+  }
+  if (options?.assignedToId) {
+    params.append('assigned_to_id', options.assignedToId);
+  }
+  if (options?.openOnly !== undefined) {
+    params.append('open_only', options.openOnly.toString());
+  }
+  if (options?.orderByDueDate !== undefined) {
+    params.append('order_by_due_date', options.orderByDueDate.toString());
+  }
+
+  const queryString = params.toString();
+  const endpoint = `/task-instances/${queryString ? `?${queryString}` : ''}`;
+  const taskInstances = await apiClient.get<any[]>(endpoint);
+
+  return taskInstances.map(ti => transformTaskInstanceToTask(ti));
 }
 
 /**
@@ -747,7 +783,7 @@ export async function createTask(
     return newTask;
   }
 
-  const taskCreate = {
+  const taskCreate: any = {
     episode_id: patientId,
     task_definition_id: '00000000-0000-0000-0000-000000000000', // TODO: Obtener ID real
     title: task.title,
@@ -756,6 +792,11 @@ export async function createTask(
     priority: mapPriorityToBackend(task.priority),
     status: mapTaskStatusToBackend(task.status),
   };
+
+  // Add assigned_to_id if provided
+  if (task.assignedToId) {
+    taskCreate.assigned_to_id = task.assignedToId;
+  }
 
   const created = await apiClient.post<any>('/task-instances/', taskCreate);
 
@@ -774,6 +815,7 @@ export async function updateTask(id: string, updates: Partial<Task>): Promise<Ta
   if (updates.dueDate !== undefined) taskUpdate.due_date = updates.dueDate;
   if (updates.priority !== undefined) taskUpdate.priority = mapPriorityToBackend(updates.priority);
   if (updates.status !== undefined) taskUpdate.status = mapTaskStatusToBackend(updates.status);
+  if (updates.assignedToId !== undefined) taskUpdate.assigned_to_id = updates.assignedToId || null;
 
   const updated = await apiClient.patch<any>(`/task-instances/${id}`, taskUpdate);
 
@@ -1102,6 +1144,67 @@ export async function getClinicalServices(): Promise<string[]> {
     'Geriatría',
     'Neurología',
   ];
+}
+
+// =============================================================================
+// TRABAJADORES (WORKERS)
+// =============================================================================
+
+/**
+ * GET /workers/
+ * Obtiene la lista de trabajadores
+ */
+export async function getWorkers(activeOnly: boolean = true): Promise<Worker[]> {
+  const params = new URLSearchParams();
+  params.append('active_only', activeOnly.toString());
+  
+  const endpoint = `/workers/?${params.toString()}`;
+  return await apiClient.get<Worker[]>(endpoint);
+}
+
+/**
+ * GET /workers/simple
+ * Obtiene la lista simplificada de trabajadores (para dropdowns)
+ */
+export async function getWorkersSimple(): Promise<WorkerSimple[]> {
+  return await apiClient.get<WorkerSimple[]>('/workers/simple');
+}
+
+/**
+ * GET /workers/{worker_id}
+ * Obtiene un trabajador por ID
+ */
+export async function getWorker(id: string): Promise<Worker> {
+  return await apiClient.get<Worker>(`/workers/${id}`);
+}
+
+/**
+ * POST /workers/
+ * Crea un nuevo trabajador
+ */
+export async function createWorker(worker: {
+  name: string;
+  email?: string;
+  role?: string;
+  department?: string;
+}): Promise<Worker> {
+  return await apiClient.post<Worker>('/workers/', worker);
+}
+
+/**
+ * PATCH /workers/{worker_id}
+ * Actualiza un trabajador
+ */
+export async function updateWorker(id: string, updates: Partial<Worker>): Promise<Worker> {
+  return await apiClient.patch<Worker>(`/workers/${id}`, updates);
+}
+
+/**
+ * DELETE /workers/{worker_id}
+ * Elimina (desactiva) un trabajador
+ */
+export async function deleteWorker(id: string): Promise<void> {
+  await apiClient.delete(`/workers/${id}`);
 }
 
 // Exportar el cliente API para uso avanzado si se necesita

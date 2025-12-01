@@ -10,12 +10,14 @@ import { PatientList } from '../components/PatientList';
 import { PatientDetail } from '../components/PatientDetail';
 import { ReferralForm } from '../components/ReferralForm';
 import { DataUpload } from '../components/DataUpload';
+import { TasksView } from '../components/TasksView';
 import { Patient } from '../types';
 import { 
   LayoutDashboard, 
   Users, 
   FileText, 
-  Upload
+  Upload,
+  ClipboardList
 } from 'lucide-react';
 import { cn } from '../components/ui/utils';
 import { Toaster } from '../components/ui/sonner';
@@ -23,7 +25,7 @@ import { Toaster } from '../components/ui/sonner';
 // Importar el adaptador de FastAPI
 import * as apiFastAPI from '../lib/api-fastapi';
 
-type View = 'dashboard' | 'patients' | 'referral' | 'upload';
+type View = 'dashboard' | 'patients' | 'tasks' | 'referral' | 'upload';
 
 function AppContent() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -50,6 +52,7 @@ function AppContent() {
   const navigation = [
     { id: 'dashboard' as View, name: 'Panel de Control', icon: LayoutDashboard },
     { id: 'patients' as View, name: 'Gestión de Casos', icon: Users },
+    { id: 'tasks' as View, name: 'Tareas', icon: ClipboardList },
     { id: 'upload' as View, name: 'Carga de Datos', icon: Upload },
   ];
 
@@ -85,6 +88,8 @@ function AppContent() {
             key={JSON.stringify(patientListFilters)}
           />
         );
+      case 'tasks':
+        return <TasksView />;
       case 'referral':
         return <ReferralForm />;
       case 'upload':

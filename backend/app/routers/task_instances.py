@@ -1,9 +1,10 @@
 from uuid import UUID
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
+from sqlalchemy.orm import selectinload
 
 from app.deps import get_session
 from app.models.task_instance import (
@@ -11,6 +12,7 @@ from app.models.task_instance import (
     TaskStatus
 )
 from app.models.task_status_history import TaskStatusHistory
+from app.models.worker import Worker as WorkerModel
 from app.schemas.task_instance import (
     TaskInstance,
     TaskInstanceCreate,
@@ -33,9 +35,85 @@ async def get_task_statuses() -> List[str]:
     return [status.value for status in TaskStatus]
 
 
+@router.get("/", response_model=List[TaskInstance])
+async def get_all_tasks(
+    status_filter: Optional[str] = Query(
+        None,
+        description="Filter by status (PENDING, IN_PROGRESS, COMPLETED, etc.)"
+    ),
+    assigned_to_id: Optional[UUID] = Query(
+        None,
+        description="Filter by assigned worker ID"
+    ),
+    open_only: bool = Query(
+        True,
+        description="If True, only returns tasks with PENDING or IN_PROGRESS status"
+    ),
+    order_by_due_date: bool = Query(
+        True,
+        description="If True, orders tasks by due date (earliest first)"
+    ),
+    session: AsyncSession = Depends(get_session)
+) -> List[TaskInstance]:
+    """
+    Get all tasks with optional filtering.
+
+    Args:
+        status_filter: Filter by specific status
+        assigned_to_id: Filter by assigned worker
+        open_only: If True, only returns PENDING and IN_PROGRESS tasks
+        order_by_due_date: If True, orders by due date ascending
+        session: Database session
+
+    Returns:
+        List of task instances
+    """
+    query = select(TaskInstanceModel).options(
+        selectinload(TaskInstanceModel.assigned_worker)
+    )
+    
+    # Apply status filter
+    if status_filter:
+        try:
+            status_enum = TaskStatus(status_filter.upper())
+            query = query.where(TaskInstanceModel.status == status_enum)
+        except ValueError:
+            pass  # Invalid status, ignore filter
+    elif open_only:
+        query = query.where(
+            or_(
+                TaskInstanceModel.status == TaskStatus.PENDING,
+                TaskInstanceModel.status == TaskStatus.IN_PROGRESS
+            )
+        )
+    
+    # Filter by assigned worker
+    if assigned_to_id:
+        query = query.where(TaskInstanceModel.assigned_to_id == assigned_to_id)
+    
+    # Order by due date
+    if order_by_due_date:
+        # Nulls last - tasks without due date appear at the end
+        query = query.order_by(
+            TaskInstanceModel.due_date.asc().nulls_last(),
+            TaskInstanceModel.priority.desc(),
+            TaskInstanceModel.created_at.desc()
+        )
+    else:
+        query = query.order_by(TaskInstanceModel.created_at.desc())
+    
+    result = await session.execute(query)
+    tasks = result.scalars().all()
+    return tasks
+
+
 @router.get("/episode/{episode_id}", response_model=List[TaskInstance])
 async def get_episode_tasks(
     episode_id: UUID,
+    assigned_to_id: Optional[UUID] = Query(
+        None,
+        description="Filter by assigned worker ID"
+    ),
     session: AsyncSession = Depends(get_session)
 ) -> List[TaskInstance]:
     """
@@ -43,16 +121,25 @@ async def get_episode_tasks(
 
     Args:
         episode_id: The UUID of the clinical episode
+        assigned_to_id: Filter by assigned worker
         session: Database session
 
     Returns:
         List of task instances for the episode
     """
-    result = await session.execute(
-        select(TaskInstanceModel).where(
-            TaskInstanceModel.episode_id == episode_id
-        )
+    query = select(TaskInstanceModel).options(
+        selectinload(TaskInstanceModel.assigned_worker)
+    ).where(TaskInstanceModel.episode_id == episode_id)
+    
+    if assigned_to_id:
+        query = query.where(TaskInstanceModel.assigned_to_id == assigned_to_id)
+    
+    query = query.order_by(
+        TaskInstanceModel.due_date.asc().nulls_last(),
+        TaskInstanceModel.priority.desc()
     )
+    
+    result = await session.execute(query)
     tasks = result.scalars().all()
     return tasks
 
@@ -76,7 +163,9 @@ async def get_task(
         HTTPException: 404 if task not found
     """
     result = await session.execute(
-        select(TaskInstanceModel).where(TaskInstanceModel.id == task_id)
+        select(TaskInstanceModel)
+        .options(selectinload(TaskInstanceModel.assigned_worker))
+        .where(TaskInstanceModel.id == task_id)
     )
     task = result.scalar_one_or_none()
 
@@ -113,7 +202,9 @@ async def update_task(
         HTTPException: 404 if task not found
     """
     result = await session.execute(
-        select(TaskInstanceModel).where(TaskInstanceModel.id == task_id)
+        select(TaskInstanceModel)
+        .options(selectinload(TaskInstanceModel.assigned_worker))
+        .where(TaskInstanceModel.id == task_id)
     )
     task = result.scalar_one_or_none()
 
@@ -265,7 +356,8 @@ async def create_task(
         due_date=task_create.due_date,
         priority=task_create.priority,
         status=TaskStatus(task_create.status.value),
-        meta_json=task_create.meta_json
+        meta_json=task_create.meta_json,
+        assigned_to_id=task_create.assigned_to_id
     )
 
     session.add(task)
@@ -281,6 +373,13 @@ async def create_task(
     session.add(status_history)
     
     await session.commit()
-    await session.refresh(task)
+    
+    # Reload task with worker relationship
+    result = await session.execute(
+        select(TaskInstanceModel)
+        .options(selectinload(TaskInstanceModel.assigned_worker))
+        .where(TaskInstanceModel.id == task.id)
+    )
+    task = result.scalar_one()
 
     return task
