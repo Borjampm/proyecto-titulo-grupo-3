@@ -844,20 +844,20 @@ export async function deleteTask(id: string): Promise<void> {
 // =============================================================================
 
 /**
- * GET /patients/:patientId/documents
+ * GET /documents/patient/:patientId
  * Obtiene todos los documentos de un paciente
- * NOTA: No implementado en el backend aún
  */
 export async function getPatientDocuments(patientId: string): Promise<Document[]> {
   if (config.USE_MOCK_DATA) {
     return mockDocuments.filter((d) => d.patientId === patientId);
   }
-  // TODO: Implementar cuando el backend tenga documentos
-  return [];
+
+  const endpoint = `/documents/patient/${patientId}`;
+  return await apiClient.get<Document[]>(endpoint);
 }
 
 /**
- * POST /patients/:patientId/documents
+ * POST /documents/patient/:patientId
  * Sube un documento para un paciente
  */
 export async function uploadDocument(
@@ -865,8 +865,26 @@ export async function uploadDocument(
   file: File,
   uploadedBy: string
 ): Promise<Document> {
-  // TODO: Implementar cuando el backend tenga documentos
-  throw new Error('Subir documentos no está disponible aún');
+  if (config.USE_MOCK_DATA) {
+    const newDocument: Document = {
+      id: 'doc_' + Date.now(),
+      patientId,
+      name: file.name,
+      type: file.type,
+      uploadedBy,
+      uploadedAt: new Date().toISOString(),
+      url: URL.createObjectURL(file),
+    };
+    mockDocuments.push(newDocument);
+    return newDocument;
+  }
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('uploaded_by', uploadedBy);
+
+  const endpoint = `/documents/patient/${patientId}`;
+  return await apiClient.uploadFile<Document>(endpoint, formData);
 }
 
 /**
@@ -874,17 +892,24 @@ export async function uploadDocument(
  * Elimina un documento
  */
 export async function deleteDocument(id: string): Promise<void> {
-  // TODO: Implementar cuando el backend tenga documentos
-  throw new Error('Eliminar documentos no está disponible aún');
+  if (config.USE_MOCK_DATA) {
+    const index = mockDocuments.findIndex(d => d.id === id);
+    if (index !== -1) {
+      mockDocuments.splice(index, 1);
+    }
+    return;
+  }
+
+  await apiClient.delete(`/documents/${id}`);
 }
 
 /**
  * GET /documents/:id/download
  * Descarga un documento
  */
-export async function downloadDocument(id: string): Promise<Blob> {
-  // TODO: Implementar cuando el backend tenga documentos
-  throw new Error('Descargar documentos no está disponible aún');
+export async function downloadDocument(id: string): Promise<string> {
+  // Return the download URL for the document
+  return `${config.BACKEND_URL}/documents/${id}/download`;
 }
 
 // =============================================================================

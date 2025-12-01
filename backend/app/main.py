@@ -8,6 +8,7 @@ from app.routers.clinical_episodes import router as clinical_episodes_router
 from app.routers.task_instances import router as task_instances_router
 from app.routers.excel_upload import router as excel_upload_router
 from app.routers.workers import router as workers_router
+from app.routers.documents import router as documents_router
 
 app = FastAPI(lifespan=lifespan)
 
@@ -59,4 +60,5 @@ app.include_router(clinical_episodes_router)
 app.include_router(task_instances_router)
 app.include_router(excel_upload_router)
 app.include_router(workers_router)
+app.include_router(documents_router)
 

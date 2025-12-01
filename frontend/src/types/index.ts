@@ -5,6 +5,7 @@ export type UserRole = 'coordinator' | 'social-worker' | 'analyst' | 'chief' | '
 
 export interface Patient {
   id: string;
+  patientId?: string; // ID del paciente real (diferente del episode ID)
   rut?: string; // RUT del paciente
   name: string;
   age: number;

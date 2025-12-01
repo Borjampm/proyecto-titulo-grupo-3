@@ -19,7 +19,10 @@ import {
   getPatientDocuments,
   createTask,
   updateTask,
-  getWorkersSimple
+  getWorkersSimple,
+  uploadDocument,
+  deleteDocument,
+  downloadDocument
 } from '../lib/api-fastapi';
 import { toast } from 'sonner';
 
@@ -37,11 +40,16 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
   const [workers, setWorkers] = useState<WorkerSimple[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterAssignee, setFilterAssignee] = useState<string>('all');
+  const [isUploading, setIsUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  // Note: patient.id is the episode ID, patient.patientId is the actual patient ID
+  const actualPatientId = patient.patientId || patient.id;
 
   useEffect(() => {
-    console.log('Episode ID:', patient.id);
+    console.log('Episode ID:', patient.id, 'Patient ID:', actualPatientId);
     loadPatientData();
-  }, [patient.id]);
+  }, [patient.id, actualPatientId]);
 
   const loadPatientData = async () => {
     try {
@@ -50,7 +58,7 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
         getPatientAlerts(patient.id),
         getPatientTimeline(patient.id),
         getPatientTasks(patient.id),
-        getPatientDocuments(patient.id),
+        getPatientDocuments(actualPatientId), // Use actual patient ID for documents
         getWorkersSimple(),
       ]);
       
@@ -89,6 +97,62 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
         console.error('Error creating task:', error);
         toast.error('Error al crear la tarea');
       }
+    }
+  };
+
+  // Document upload handlers
+  const handleFileUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    
+    setIsUploading(true);
+    try {
+      for (const file of Array.from(files)) {
+        await uploadDocument(actualPatientId, file, 'Usuario actual');
+      }
+      toast.success(files.length > 1 ? `${files.length} documentos subidos exitosamente` : 'Documento subido exitosamente');
+      loadPatientData();
+    } catch (error) {
+      console.error('Error uploading document:', error);
+      toast.error('Error al subir el documento');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    handleFileUpload(e.dataTransfer.files);
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    try {
+      await deleteDocument(docId);
+      toast.success('Documento eliminado exitosamente');
+      loadPatientData();
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      toast.error('Error al eliminar el documento');
+    }
+  };
+
+  const handleViewDocument = async (docId: string) => {
+    try {
+      const url = await downloadDocument(docId);
+      window.open(url, '_blank');
+    } catch (error) {
+      console.error('Error downloading document:', error);
+      toast.error('Error al descargar el documento');
     }
   };
 
@@ -579,13 +643,41 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
         <TabsContent value="documents" className="mt-4 space-y-4">
           <Card className="p-6">
             <h4 className="mb-4">Cargar Nuevo Documento</h4>
-            <div className="border-2 border-dashed rounded-lg p-8 text-center">
-              <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-              <p className="text-muted-foreground mb-4">
-                Arrastra archivos aquí o haz clic para cargar
+            <div 
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
+                isDragOver 
+                  ? 'border-blue-500 bg-blue-50' 
+                  : 'border-gray-300 hover:border-gray-400'
+              } ${isUploading ? 'opacity-50 pointer-events-none' : ''}`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => document.getElementById('document-upload')?.click()}
+            >
+              <Upload className={`w-12 h-12 mx-auto mb-4 ${isDragOver ? 'text-blue-500' : 'text-muted-foreground'}`} />
+              <p className={`mb-4 ${isDragOver ? 'text-blue-600' : 'text-muted-foreground'}`}>
+                {isUploading 
+                  ? 'Subiendo archivo...' 
+                  : isDragOver 
+                    ? 'Suelta el archivo aquí' 
+                    : 'Arrastra archivos aquí o haz clic para cargar'}
               </p>
-              <Button variant="outline">Seleccionar Archivos</Button>
+              <input
+                type="file"
+                id="document-upload"
+                className="hidden"
+                multiple
+                accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.gif,.xlsx,.xls,.txt"
+                onChange={(e) => handleFileUpload(e.target.files)}
+                disabled={isUploading}
+              />
+              <Button variant="outline" disabled={isUploading}>
+                {isUploading ? 'Subiendo...' : 'Seleccionar Archivos'}
+              </Button>
             </div>
+            <p className="text-muted-foreground mt-4 text-sm">
+              Formatos aceptados: PDF, DOC, DOCX, JPG, PNG, GIF, XLSX, XLS, TXT (máx. 10MB)
+            </p>
           </Card>
 
           <Card className="p-6">
@@ -605,9 +697,19 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                         </p>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm">
-                      Ver
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button variant="outline" size="sm" onClick={() => handleViewDocument(doc.id)}>
+                        Descargar
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        onClick={() => handleDeleteDocument(doc.id)}
+                      >
+                        Eliminar
+                      </Button>
+                    </div>
                   </div>
                 ))
               )}
