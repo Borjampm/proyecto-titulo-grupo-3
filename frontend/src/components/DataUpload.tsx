@@ -16,7 +16,9 @@ export function DataUpload() {
     imported: number; 
     errors: string[]; 
     missingCount?: number; 
-    missingIds?: string[] 
+    missingIds?: string[];
+    debugDbIds?: string[];
+    debugFileIds?: string[];
   } | null>(null);
   const [fileType, setFileType] = useState<ExcelFileType>('score_social');
 
@@ -54,7 +56,9 @@ export function DataUpload() {
           imported: result.imported, 
           errors: result.errors,
           missingCount: result.missingCount,
-          missingIds: result.missingIds
+          missingIds: result.missingIds,
+          debugDbIds: (result as any).debugDbIds,
+          debugFileIds: (result as any).debugFileIds,
         });
         setUploadStatus('success');
         toast.success(successMessage);
@@ -117,6 +121,27 @@ export function DataUpload() {
                           {id}{index < uploadResult.missingIds!.length - 1 ? ', ' : ''}
                         </span>
                       ))}
+                    </div>
+                  </details>
+                )}
+                {(uploadResult.debugDbIds || uploadResult.debugFileIds) && (
+                  <details className="mt-2">
+                    <summary className="cursor-pointer text-sm font-medium hover:underline">
+                      Ver información de debug
+                    </summary>
+                    <div className="mt-2 text-xs bg-yellow-100 p-2 rounded space-y-2">
+                      {uploadResult.debugDbIds && uploadResult.debugDbIds.length > 0 && (
+                        <div>
+                          <strong>IDs en la base de datos (muestra):</strong>
+                          <div className="font-mono">{uploadResult.debugDbIds.join(', ')}</div>
+                        </div>
+                      )}
+                      {uploadResult.debugFileIds && uploadResult.debugFileIds.length > 0 && (
+                        <div>
+                          <strong>IDs en el archivo Excel (muestra):</strong>
+                          <div className="font-mono">{uploadResult.debugFileIds.join(', ')}</div>
+                        </div>
+                      )}
                     </div>
                   </details>
                 )}

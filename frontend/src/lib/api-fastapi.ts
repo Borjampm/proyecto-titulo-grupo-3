@@ -1067,7 +1067,7 @@ export async function importGestionEstadiaFromExcel(file: File): Promise<ExcelIm
  * - Episodio CMBD: Episode identifier
  * - Estancia Norma GRD: Expected stay days from GRD norm
  */
-export async function importGrdFromExcel(file: File): Promise<ExcelImportResult> {
+export async function importGrdFromExcel(file: File): Promise<ExcelImportResult & { debugDbIds?: string[]; debugFileIds?: string[] }> {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -1079,6 +1079,8 @@ export async function importGrdFromExcel(file: File): Promise<ExcelImportResult>
     errors: response.errors || [],
     missingCount: response.missing_count || 0,
     missingIds: response.missing_ids || [],
+    debugDbIds: response.debug_sample_db_ids || [],
+    debugFileIds: response.debug_sample_file_ids || [],
   };
 }
 

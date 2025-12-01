@@ -1631,7 +1631,7 @@ class ExcelUploader:
         episode_map = {}
         
         def normalize_identifier(identifier: str) -> str:
-            """Normalize identifier by removing trailing .0 from floats."""
+            """Normalize identifier by removing trailing .0 from floats and extra whitespace."""
             s = str(identifier).strip()
             if s.endswith('.0'):
                 s = s[:-2]
@@ -1642,12 +1642,16 @@ class ExcelUploader:
         result = await self.db.execute(stmt)
         episodes = result.scalars().all()
         
+        direct_count = 0
         for episode in episodes:
             if episode.episode_identifier:
                 identifier = normalize_identifier(episode.episode_identifier)
                 episode_map[identifier] = episode.id
+                direct_count += 1
+                if direct_count <= 5:
+                    logger.debug(f"Direct episode_identifier: '{identifier}' -> {episode.id}")
         
-        logger.info(f"Found {len(episode_map)} episodes with direct episode_identifier")
+        logger.info(f"Found {direct_count} episodes with direct episode_identifier")
         
         # 2. Get episode identifiers from ClinicalEpisodeInformation (legacy)
         stmt = select(ClinicalEpisodeInformation).where(
@@ -1886,9 +1890,14 @@ class ExcelUploader:
             # Build episode identifier map
             episode_map = await self._build_episode_identifier_map()
             logger.info(f"Built episode map with {len(episode_map)} entries")
+            
+            # Log sample identifiers from database for debugging
+            sample_db_ids = list(episode_map.keys())[:10]
+            logger.info(f"Sample identifiers from database: {sample_db_ids}")
 
             updated_count = 0
             missing_ids = []
+            sample_file_ids = []
 
             for idx, row in df.iterrows():
                 try:
@@ -1897,13 +1906,17 @@ class ExcelUploader:
                     if pd.isna(episode_raw):
                         continue
                     
-                    # Normalize identifier
+                    # Normalize identifier - remove .0 suffix and strip whitespace
                     episode_identifier = str(episode_raw).strip()
                     if episode_identifier.endswith('.0'):
                         episode_identifier = episode_identifier[:-2]
                     
                     if not episode_identifier or episode_identifier.lower() == 'nan':
                         continue
+                    
+                    # Collect sample identifiers from file for debugging
+                    if len(sample_file_ids) < 10:
+                        sample_file_ids.append(episode_identifier)
 
                     # Get GRD expected days
                     grd_raw = row.get(grd_col)
@@ -1916,18 +1929,34 @@ class ExcelUploader:
                         logger.warning(f"Could not parse GRD value '{grd_raw}' for episode {episode_identifier}")
                         continue
 
-                    # Find and update episode
+                    # Find and update episode - try exact match first
                     if episode_identifier in episode_map:
                         episode_id = episode_map[episode_identifier]
                         await self._update_episode_grd(episode_id, grd_days)
                         updated_count += 1
+                        logger.debug(f"Updated episode {episode_identifier} with GRD {grd_days}")
                     else:
-                        logger.debug(f"Episode not found for identifier: {episode_identifier}")
-                        missing_ids.append(episode_identifier)
+                        # Try to find by searching for partial match or different format
+                        found = False
+                        for db_identifier, ep_id in episode_map.items():
+                            # Try matching just the numeric part
+                            if episode_identifier in db_identifier or db_identifier in episode_identifier:
+                                await self._update_episode_grd(ep_id, grd_days)
+                                updated_count += 1
+                                logger.debug(f"Updated episode {db_identifier} (matched from {episode_identifier}) with GRD {grd_days}")
+                                found = True
+                                break
+                        
+                        if not found:
+                            logger.debug(f"Episode not found for identifier: {episode_identifier}")
+                            missing_ids.append(episode_identifier)
 
                 except Exception as e:
                     logger.error(f"Error processing GRD row {idx}: {e}")
                     continue
+            
+            # Log sample identifiers from file for debugging
+            logger.info(f"Sample identifiers from GRD file: {sample_file_ids}")
 
             await self.db.commit()
             logger.info(f"Successfully updated {updated_count} episodes with GRD data. Missing episodes: {len(missing_ids)}")
@@ -1935,7 +1964,9 @@ class ExcelUploader:
             return {
                 "count": updated_count,
                 "missing_count": len(missing_ids),
-                "missing_ids": missing_ids[:100]  # Limit to first 100 missing IDs
+                "missing_ids": missing_ids[:100],  # Limit to first 100 missing IDs
+                "sample_db_ids": sample_db_ids,
+                "sample_file_ids": sample_file_ids,
             }
 
         except Exception as e:

@@ -242,13 +242,21 @@ async def upload_grd(
         uploader = ExcelUploader(session)
         result = await uploader.upload_grd_from_excel(tmp_file_path)
         
-        return {
+        response = {
             "status": "success",
             "message": f"Successfully updated {result['count']} episodes with GRD data",
             "episodes_updated": result['count'],
             "missing_count": result['missing_count'],
             "missing_ids": result['missing_ids'],
         }
+        
+        # Add debug info if available
+        if 'sample_db_ids' in result:
+            response['debug_sample_db_ids'] = result['sample_db_ids']
+        if 'sample_file_ids' in result:
+            response['debug_sample_file_ids'] = result['sample_file_ids']
+        
+        return response
     
     except Exception as e:
         raise HTTPException(
