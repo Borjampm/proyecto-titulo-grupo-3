@@ -10,7 +10,18 @@ import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { Timeline } from './Timeline';
-import { ArrowLeft, Calendar, User, Building, FileText, AlertTriangle, Upload, Clock, ClipboardList, CheckCircle2, Circle, UserCircle } from 'lucide-react';
+import { 
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from './ui/alert-dialog';
+import { ArrowLeft, Calendar, User, Building, FileText, AlertTriangle, Upload, Clock, ClipboardList, CheckCircle2, Circle, UserCircle, XCircle } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { 
   getPatientAlerts, 
@@ -22,7 +33,8 @@ import {
   getWorkersSimple,
   uploadDocument,
   deleteDocument,
-  downloadDocument
+  downloadDocument,
+  closeEpisode
 } from '../lib/api-fastapi';
 import { toast } from 'sonner';
 
@@ -42,6 +54,8 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
   const [filterAssignee, setFilterAssignee] = useState<string>('all');
   const [isUploading, setIsUploading] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [isClosingEpisode, setIsClosingEpisode] = useState(false);
+  const [showCloseDialog, setShowCloseDialog] = useState(false);
 
   // Note: patient.id is the episode ID, patient.patientId is the actual patient ID
   const actualPatientId = patient.patientId || patient.id;
@@ -72,6 +86,24 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
       toast.error('Error al cargar datos del paciente');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCloseEpisode = async () => {
+    if (patient.caseStatus === 'closed') return;
+    
+    try {
+      setIsClosingEpisode(true);
+      setShowCloseDialog(false);
+      await closeEpisode(patient.id);
+      toast.success('Episodio cerrado exitosamente');
+      // Reload or go back after closing
+      onBack();
+    } catch (error) {
+      console.error('Error closing episode:', error);
+      toast.error('Error al cerrar el episodio');
+    } finally {
+      setIsClosingEpisode(false);
     }
   };
 
@@ -173,7 +205,40 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
             Detalle completo del paciente y gestión de estadía
           </p>
         </div>
-        <RiskBadge level={patient.riskLevel} />
+        <div className="flex items-center gap-3">
+          <RiskBadge level={patient.riskLevel} />
+          {patient.caseStatus === 'open' && (
+            <AlertDialog open={showCloseDialog} onOpenChange={setShowCloseDialog}>
+              <AlertDialogTrigger asChild>
+                <Button 
+                  variant="destructive"
+                  disabled={isClosingEpisode}
+                >
+                  <XCircle className="w-4 h-4 mr-2" />
+                  {isClosingEpisode ? 'Cerrando...' : 'Cerrar Episodio'}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>¿Cerrar episodio?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Esta acción marcará el episodio como cerrado (alta). 
+                    ¿Estás seguro de que deseas continuar?
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                  <AlertDialogAction 
+                    onClick={handleCloseEpisode}
+                    className="bg-red-600 hover:bg-red-700"
+                  >
+                    Cerrar Episodio
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
+        </div>
       </div>
 
       {/* Patient Info Cards */}
@@ -212,8 +277,8 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
           <div className="flex items-center gap-3">
             <FileText className="w-5 h-5 text-muted-foreground" />
             <div>
-              <p className="text-muted-foreground">GRD</p>
-              <p>{patient.grg}</p>
+              <p className="text-muted-foreground">GRD (Días Esperados)</p>
+              <p>{patient.expectedDays !== null ? `${patient.expectedDays} días` : 'Sin datos GRD'}</p>
             </div>
           </div>
         </Card>
@@ -240,7 +305,7 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
           <div>
             <p className="text-muted-foreground">Estado del Caso</p>
             <Badge 
-              className="mt-1" 
+              className="mt-1"
               variant="outline"
               style={{
                 backgroundColor: patient.caseStatus === 'open' ? 'rgb(240 253 244)' : 'rgb(249 250 251)',

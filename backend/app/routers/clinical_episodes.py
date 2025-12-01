@@ -308,6 +308,36 @@ async def create_referral(
     return episode
 
 
+@router.patch("/{episode_id}/close", response_model=ClinicalEpisode)
+async def close_episode(
+    episode_id: UUID,
+    session: AsyncSession = Depends(get_session)
+) -> ClinicalEpisode:
+    """
+    Close a clinical episode (mark as discharged).
+    
+    This sets the episode status to DISCHARGED and sets the discharge_at timestamp.
+    """
+    result = await session.execute(
+        select(ClinicalEpisodeModel).where(ClinicalEpisodeModel.id == episode_id)
+    )
+    episode = result.scalar_one_or_none()
+    
+    if not episode:
+        raise HTTPException(status_code=404, detail="Clinical episode not found")
+    
+    if episode.status == EpisodeStatus.DISCHARGED:
+        raise HTTPException(status_code=400, detail="Episode is already closed")
+    
+    episode.status = EpisodeStatus.DISCHARGED
+    episode.discharge_at = datetime.utcnow()
+    
+    await session.commit()
+    await session.refresh(episode)
+    
+    return episode
+
+
 # IMPORTANTE: Esto siempre tiene que ir al final de los endpoints porque si no una ruta se puede mappear a una ID de episodio.
 @router.get("/{episode_id}", response_model=Union[ClinicalEpisodeWithIncludes, ClinicalEpisodeWithPatient, ClinicalEpisode])
 async def get_clinical_episode(

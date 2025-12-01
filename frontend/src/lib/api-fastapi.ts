@@ -331,7 +331,7 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
     admissionDate: episode.admission_at,
     dischargeDate: episode.discharge_at || undefined,
     diagnosis: 'N/A', // TODO: Obtener del episodio cuando esté disponible
-    grg: 'N/A', // TODO: Obtener del episodio cuando esté disponible
+    grg: episode.grd_expected_days ? `${episode.grd_expected_days} días` : 'Sin GRD',
     daysInStay: daysInStay,
     // Use GRD expected days if available, null if no GRD data
     expectedDays: episode.grd_expected_days ?? null,
@@ -678,6 +678,14 @@ export async function updateClinicalEpisode(id: string, updates: Partial<Patient
 export async function deleteClinicalEpisode(id: string): Promise<void> {
   // TODO: Implementar cuando el backend soporte eliminar episodios
   throw new Error('Eliminar paciente no está disponible aún');
+}
+
+/**
+ * PATCH /clinical-episodes/{id}/close
+ * Closes a clinical episode (marks it as discharged)
+ */
+export async function closeEpisode(id: string): Promise<void> {
+  await apiClient.patch(`/clinical-episodes/${id}/close`, {});
 }
 
 // =============================================================================
