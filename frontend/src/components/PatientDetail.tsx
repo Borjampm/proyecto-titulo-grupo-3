@@ -206,7 +206,6 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <RiskBadge level={patient.riskLevel} />
           {patient.caseStatus === 'open' && (
             <AlertDialog open={showCloseDialog} onOpenChange={setShowCloseDialog}>
               <AlertDialogTrigger asChild>
@@ -581,6 +580,10 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                             <Circle className="w-4 h-4 text-gray-400" />
                           )}
                           <h4>{task.title}</h4>
+                        </div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-sm text-muted-foreground">Responsable:</span>
+                          <span className="text-sm font-medium">{task.assignedTo || 'Sin asignar'}</span>
                         </div>
                         {task.description && (
                           <p className="text-muted-foreground mb-2">{task.description}</p>
