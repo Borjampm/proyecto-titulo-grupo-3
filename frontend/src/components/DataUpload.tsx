@@ -269,14 +269,17 @@ export function DataUpload() {
           {fileType === 'grd' && (
             <>
               <p className="text-muted-foreground mb-4">
-                El archivo debe contener una hoja &quot;egresos 2024-2025&quot; con los días esperados de estadía según GRD:
+                El archivo &quot;resultado prediccion&quot; debe contener las siguientes columnas:
               </p>
               <ul className="space-y-2 text-muted-foreground">
-                <li>• <strong>Episodio CMBD</strong> - Identificador del episodio</li>
-                <li>• <strong>Estancia Norma GRD</strong> - Días esperados de estadía</li>
+                <li>• <strong>Episodio</strong> - Identificador del episodio</li>
+                <li>• <strong>IR GRD CODE</strong> - Código GRD con formato: &quot;ID - Nombre&quot;</li>
               </ul>
               <p className="text-muted-foreground mt-4 text-sm">
-                Este archivo actualiza los días esperados de estadía para los episodios existentes según la norma GRD.
+                Ejemplo de IR GRD CODE: &quot;51013 - PH TRASPLANTE CARDÍACO Y/O PULMONAR W/MCC&quot;
+              </p>
+              <p className="text-muted-foreground mt-2 text-sm">
+                El sistema extraerá el ID del GRD, buscará los días esperados en las normas GRD y actualizará los episodios.
               </p>
             </>
           )}

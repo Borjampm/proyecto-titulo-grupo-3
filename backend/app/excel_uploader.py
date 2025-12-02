@@ -1791,49 +1791,38 @@ class ExcelUploader:
 
     async def upload_grd_from_excel(self, excel_path: str | Path) -> Dict[str, Any]:
         """
-        Upload GRD (expected stay days) data from "egresos 2024-2025" sheet.
+        Upload GRD predictions from "resultado prediccion" Excel file.
 
         This method:
-        - Reads the "egresos 2024-2025" sheet
-        - Extracts: Episodio CMBD (episode identifier), Estancia Norma GRD (expected days)
+        - Reads the Excel file (typically has only one sheet)
+        - Extracts: Episodio (episode identifier), IR GRD CODE (GRD ID and name)
+        - Parses GRD ID from "IR GRD CODE" format: "{grd_id} - {grd_name}"
+        - Looks up expected days from grd_norms table
         - Updates the grd_expected_days field on matching ClinicalEpisode records
 
         Args:
-            excel_path: Path to the Excel file with GRD data
+            excel_path: Path to the Excel file with GRD predictions
 
         Returns:
             Dictionary with upload statistics:
             - count: Number of episodes updated with GRD data
             - missing_count: Number of records where episode was not found
             - missing_ids: List of episode identifiers that were not found
+            - grd_not_found_count: Number of GRD IDs not found in norms table
         """
-        logger.info(f"Reading GRD data from {excel_path}")
+        logger.info(f"Reading GRD prediction data from {excel_path}")
 
         try:
-            # Try to read the sheet - handle case variations
-            sheet_name = "egresos 2024-2025"
-            try:
-                df = pd.read_excel(excel_path, sheet_name=sheet_name)
-            except ValueError:
-                # Try to find a similar sheet name
-                xl = pd.ExcelFile(excel_path)
-                available_sheets = xl.sheet_names
-                logger.info(f"Available sheets: {available_sheets}")
-                
-                # Look for a matching sheet
-                matching_sheet = None
-                for s in available_sheets:
-                    if "egreso" in s.lower() or "2024" in s or "2025" in s:
-                        matching_sheet = s
-                        break
-                
-                if matching_sheet:
-                    logger.info(f"Using sheet: {matching_sheet}")
-                    df = pd.read_excel(excel_path, sheet_name=matching_sheet)
-                else:
-                    raise ValueError(f"Sheet '{sheet_name}' not found. Available sheets: {available_sheets}")
-            
-            logger.info(f"Found {len(df)} rows in GRD sheet")
+            # Read the first sheet (usually "resultado prediccion" has only one sheet)
+            xl = pd.ExcelFile(excel_path)
+            available_sheets = xl.sheet_names
+            logger.info(f"Available sheets: {available_sheets}")
+
+            # Use the first sheet
+            sheet_name = available_sheets[0] if available_sheets else 0
+            df = pd.read_excel(excel_path, sheet_name=sheet_name)
+
+            logger.info(f"Found {len(df)} rows in sheet '{sheet_name}'")
             logger.info(f"Columns: {list(df.columns)}")
 
             # Normalize column names for flexible matching
@@ -1843,49 +1832,30 @@ class ExcelUploader:
                     norm = self._normalize_col_name(col)
                     col_map[norm] = col
 
-            # Find the episode identifier column (Episodio CMBD)
+            # Find the episode identifier column (should be "Episodio")
             episode_col = None
-            for candidates in [["episodio cmbd", "episodio", "episodiocmbd", "cmbd"]]:
-                for c in candidates:
-                    if c in col_map:
-                        episode_col = col_map[c]
-                        break
-                if episode_col:
+            for candidate in ["episodio", "episodio cmbd", "cmbd", "caso"]:
+                if candidate in col_map:
+                    episode_col = col_map[candidate]
+                    logger.info(f"Found episode column by match '{candidate}': {episode_col}")
                     break
-            
-            if not episode_col:
-                # Try to find any column with "episodio" in name
-                for norm, orig in col_map.items():
-                    if "episodio" in norm:
-                        episode_col = orig
-                        break
-            
+
             if not episode_col:
                 raise ValueError(f"Could not find episode identifier column. Available columns: {list(df.columns)}")
-            
-            logger.info(f"Using episode column: {episode_col}")
 
-            # Find the GRD expected days column (Estancia Norma GRD)
-            grd_col = None
-            for candidates in [["estancia norma grd", "estancianormagrd", "norma grd", "grd", "estancia norma"]]:
-                for c in candidates:
-                    if c in col_map:
-                        grd_col = col_map[c]
-                        break
-                if grd_col:
+            # Find the IR GRD CODE column
+            grd_code_col = None
+            for candidate in ["ir grd code", "irgrdcode", "grd code", "ir grd", "grdcode", "codigo grd"]:
+                if candidate in col_map:
+                    grd_code_col = col_map[candidate]
+                    logger.info(f"Found GRD code column by match '{candidate}': {grd_code_col}")
                     break
-            
-            if not grd_col:
-                # Try to find any column with "estancia" or "norma" or "grd" in name
-                for norm, orig in col_map.items():
-                    if "estancia" in norm or "norma" in norm or "grd" in norm:
-                        grd_col = orig
-                        break
-            
-            if not grd_col:
-                raise ValueError(f"Could not find GRD expected days column. Available columns: {list(df.columns)}")
-            
-            logger.info(f"Using GRD column: {grd_col}")
+
+            if not grd_code_col:
+                raise ValueError(f"Could not find IR GRD CODE column. Available columns: {list(df.columns)}")
+
+            logger.info(f"Using episode column: '{episode_col}'")
+            logger.info(f"Using GRD code column: '{grd_code_col}'")
 
             # Build episode identifier map
             episode_map = await self._build_episode_identifier_map()
@@ -1896,7 +1866,8 @@ class ExcelUploader:
             logger.info(f"Sample identifiers from database: {sample_db_ids}")
 
             updated_count = 0
-            missing_ids = []
+            missing_episode_ids = []
+            grd_not_found_ids = []
             sample_file_ids = []
 
             for idx, row in df.iterrows():
@@ -1905,66 +1876,92 @@ class ExcelUploader:
                     episode_raw = row.get(episode_col)
                     if pd.isna(episode_raw):
                         continue
-                    
+
                     # Normalize identifier - remove .0 suffix and strip whitespace
                     episode_identifier = str(episode_raw).strip()
                     if episode_identifier.endswith('.0'):
                         episode_identifier = episode_identifier[:-2]
-                    
+
                     if not episode_identifier or episode_identifier.lower() == 'nan':
                         continue
-                    
+
                     # Collect sample identifiers from file for debugging
                     if len(sample_file_ids) < 10:
                         sample_file_ids.append(episode_identifier)
 
-                    # Get GRD expected days
-                    grd_raw = row.get(grd_col)
-                    if pd.isna(grd_raw):
+                    # Get IR GRD CODE (format: "{grd_id} - {grd_name}")
+                    grd_code_raw = row.get(grd_code_col)
+                    if pd.isna(grd_code_raw):
+                        logger.debug(f"Skipping episode {episode_identifier}: IR GRD CODE is null")
                         continue
-                    
-                    try:
-                        grd_days = int(float(grd_raw))
-                    except (ValueError, TypeError):
-                        logger.warning(f"Could not parse GRD value '{grd_raw}' for episode {episode_identifier}")
+
+                    grd_code_str = str(grd_code_raw).strip()
+
+                    # Extract GRD ID from format "{grd_id} - {grd_name}"
+                    # Example: "51013 - PH TRASPLANTE CARDÍACO Y/O PULMONAR W/MCC" -> "51013"
+                    if ' - ' in grd_code_str:
+                        grd_id = grd_code_str.split(' - ')[0].strip()
+                    elif '-' in grd_code_str:
+                        grd_id = grd_code_str.split('-')[0].strip()
+                    else:
+                        # No separator found, use the whole string
+                        grd_id = grd_code_str
+
+                    logger.debug(f"Episode {episode_identifier}: Extracted GRD ID '{grd_id}' from '{grd_code_str}'")
+
+                    # Look up expected days from grd_norms table
+                    from app.models.grd_norm import GrdNorm
+                    stmt = select(GrdNorm).where(GrdNorm.grd_id == grd_id)
+                    result = await self.db.execute(stmt)
+                    grd_norm = result.scalar_one_or_none()
+
+                    if not grd_norm:
+                        logger.warning(f"GRD ID '{grd_id}' not found in grd_norms table for episode {episode_identifier}")
+                        grd_not_found_ids.append(grd_id)
                         continue
+
+                    grd_expected_days = grd_norm.expected_days
+                    logger.debug(f"Found {grd_expected_days} expected days for GRD '{grd_id}'")
 
                     # Find and update episode - try exact match first
                     if episode_identifier in episode_map:
                         episode_id = episode_map[episode_identifier]
-                        await self._update_episode_grd(episode_id, grd_days)
+                        await self._update_episode_grd(episode_id, grd_expected_days)
                         updated_count += 1
-                        logger.debug(f"Updated episode {episode_identifier} with GRD {grd_days}")
+                        logger.debug(f"Updated episode {episode_identifier} with GRD {grd_id} ({grd_expected_days} days)")
                     else:
                         # Try to find by searching for partial match or different format
                         found = False
                         for db_identifier, ep_id in episode_map.items():
                             # Try matching just the numeric part
                             if episode_identifier in db_identifier or db_identifier in episode_identifier:
-                                await self._update_episode_grd(ep_id, grd_days)
+                                await self._update_episode_grd(ep_id, grd_expected_days)
                                 updated_count += 1
-                                logger.debug(f"Updated episode {db_identifier} (matched from {episode_identifier}) with GRD {grd_days}")
+                                logger.debug(f"Updated episode {db_identifier} (matched from {episode_identifier}) with GRD {grd_id} ({grd_expected_days} days)")
                                 found = True
                                 break
-                        
+
                         if not found:
                             logger.debug(f"Episode not found for identifier: {episode_identifier}")
-                            missing_ids.append(episode_identifier)
+                            missing_episode_ids.append(episode_identifier)
 
                 except Exception as e:
                     logger.error(f"Error processing GRD row {idx}: {e}")
                     continue
-            
+
             # Log sample identifiers from file for debugging
             logger.info(f"Sample identifiers from GRD file: {sample_file_ids}")
 
             await self.db.commit()
-            logger.info(f"Successfully updated {updated_count} episodes with GRD data. Missing episodes: {len(missing_ids)}")
-            
+            logger.info(f"Successfully updated {updated_count} episodes with GRD data")
+            logger.info(f"Missing episodes: {len(missing_episode_ids)}, GRDs not found in norms: {len(grd_not_found_ids)}")
+
             return {
                 "count": updated_count,
-                "missing_count": len(missing_ids),
-                "missing_ids": missing_ids[:100],  # Limit to first 100 missing IDs
+                "missing_count": len(missing_episode_ids),
+                "missing_ids": missing_episode_ids[:100],  # Limit to first 100 missing IDs
+                "grd_not_found_count": len(set(grd_not_found_ids)),  # Unique GRD IDs not found
+                "grd_not_found_ids": list(set(grd_not_found_ids))[:50],  # Sample of GRD IDs not found
                 "sample_db_ids": sample_db_ids,
                 "sample_file_ids": sample_file_ids,
             }
