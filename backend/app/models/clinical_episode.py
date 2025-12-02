@@ -70,10 +70,35 @@ class ClinicalEpisode(Base):
         nullable=True,
         comment="Expected stay days from GRD (Estancia Norma GRD)"
     )
+    grd_id: Mapped[str] = mapped_column(
+        String(128),
+        nullable=True,
+        comment="GRD code identifier (IR GRD Código)"
+    )
     grd_name: Mapped[str] = mapped_column(
         String(500),
         nullable=True,
         comment="GRD diagnosis name (e.g., PH TRASPLANTE CARDÍACO Y/O PULMONAR W/MCC)"
+    )
+    # Prediction fields and additional metadata used by the CatBoost model
+    overstay_probability: Mapped[float] = mapped_column(
+        nullable=True,
+        comment="Predicted probability of overstay (0-1)"
+    )
+    prevision_desc: Mapped[str] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Previsión (Desc)"
+    )
+    tipo_ingreso_desc: Mapped[str] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Tipo Ingreso (Descripción)"
+    )
+    servicio_ingreso_desc: Mapped[str] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="Servicio Ingreso (Descripción)"
     )
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
