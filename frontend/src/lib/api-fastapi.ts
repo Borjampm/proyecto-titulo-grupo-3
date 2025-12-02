@@ -1168,6 +1168,29 @@ export async function importGrdFromExcel(file: File): Promise<ExcelImportResult 
   };
 }
 
+/**
+ * POST /excel/upload-grd-norms
+ * Importa normas GRD (normas_eeuu) desde archivo Excel
+ *
+ * Expects a file with columns:
+ * - GRD: GRD code identifier
+ * - Est Media: Expected stay days (float, will be converted to int)
+ */
+export async function importGrdNormsFromExcel(file: File): Promise<ExcelImportResult & { created?: number; updated?: number }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await apiClient.uploadFile<any>('/excel/upload-grd-norms', formData);
+
+  return {
+    success: response.status === 'success',
+    imported: response.count || 0,
+    errors: response.errors || [],
+    created: response.created || 0,
+    updated: response.updated || 0,
+  };
+}
+
 // =============================================================================
 // SERVICIOS CLÍNICOS
 // =============================================================================

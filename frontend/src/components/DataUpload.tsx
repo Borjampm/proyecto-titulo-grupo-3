@@ -4,10 +4,10 @@ import { Button } from './ui/button';
 import { Upload, FileSpreadsheet, CheckCircle, AlertCircle } from 'lucide-react';
 import { Alert, AlertDescription } from './ui/alert';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { importSocialScoresFromExcel, importBedsFromExcel, importGestionEstadiaFromExcel, importGrdFromExcel } from '../lib/api-fastapi';
+import { importSocialScoresFromExcel, importBedsFromExcel, importGestionEstadiaFromExcel, importGrdFromExcel, importGrdNormsFromExcel } from '../lib/api-fastapi';
 import { toast } from 'sonner';
 
-type ExcelFileType = 'score_social' | 'beds' | 'gestion_estadia' | 'grd';
+type ExcelFileType = 'score_social' | 'beds' | 'gestion_estadia' | 'grd' | 'grd_norms';
 
 export function DataUpload() {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
@@ -49,6 +49,10 @@ export function DataUpload() {
           case 'grd':
             result = await importGrdFromExcel(file);
             successMessage = `${result.imported} episodios actualizados con datos GRD`;
+            break;
+          case 'grd_norms':
+            result = await importGrdNormsFromExcel(file);
+            successMessage = `${result.imported} normas GRD procesadas (${(result as any).created} creadas, ${(result as any).updated} actualizadas)`;
             break;
         }
         
@@ -183,6 +187,7 @@ export function DataUpload() {
                 <SelectItem value="beds">Camas</SelectItem>
                 <SelectItem value="gestion_estadia">Gestión Estadía</SelectItem>
                 <SelectItem value="grd">GRD (Días Esperados)</SelectItem>
+                <SelectItem value="grd_norms">Normas GRD (normas_eeuu)</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -190,17 +195,17 @@ export function DataUpload() {
           <div className="border-2 border-dashed rounded-lg p-8 text-center">
             <FileSpreadsheet className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground mb-4">
-              Arrastra un archivo Excel aquí
+              {fileType === 'grd_norms' ? 'Arrastra un archivo Excel o CSV aquí' : 'Arrastra un archivo Excel aquí'}
             </p>
             <input
               type="file"
-              accept=".xlsx,.xls,.xlsm"
+              accept={fileType === 'grd_norms' ? '.xlsx,.xls,.xlsm,.csv' : '.xlsx,.xls,.xlsm'}
               onChange={handleFileChange}
               className="hidden"
               id="file-upload"
             />
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => document.getElementById('file-upload')?.click()}
             >
               <Upload className="w-4 h-4 mr-2" />
@@ -208,7 +213,7 @@ export function DataUpload() {
             </Button>
           </div>
           <p className="text-muted-foreground mt-4">
-            Formatos aceptados: .xlsx, .xls, .xlsm
+            Formatos aceptados: {fileType === 'grd_norms' ? '.xlsx, .xls, .xlsm, .csv' : '.xlsx, .xls, .xlsm'}
           </p>
         </Card>
 
@@ -272,6 +277,23 @@ export function DataUpload() {
               </ul>
               <p className="text-muted-foreground mt-4 text-sm">
                 Este archivo actualiza los días esperados de estadía para los episodios existentes según la norma GRD.
+              </p>
+            </>
+          )}
+          {fileType === 'grd_norms' && (
+            <>
+              <p className="text-muted-foreground mb-4">
+                El archivo debe contener las normas GRD (normas_eeuu) con las siguientes columnas:
+              </p>
+              <ul className="space-y-2 text-muted-foreground">
+                <li>• <strong>GRD</strong> - Código identificador del GRD</li>
+                <li>• <strong>Est Media</strong> - Días esperados de estadía (estancia media)</li>
+              </ul>
+              <p className="text-muted-foreground mt-4 text-sm">
+                Este archivo carga las normas de referencia que definen cuántos días debería durar la estadía para cada GRD según estándares de EE.UU.
+              </p>
+              <p className="text-muted-foreground mt-2 text-sm font-medium">
+                Formatos aceptados: Excel (.xlsx, .xls, .xlsm) o CSV (.csv)
               </p>
             </>
           )}

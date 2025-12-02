@@ -1979,11 +1979,277 @@ class ExcelUploader:
         stmt = select(ClinicalEpisode).where(ClinicalEpisode.id == episode_id)
         result = await self.db.execute(stmt)
         episode = result.scalar_one_or_none()
-        
+
         if episode:
             episode.grd_expected_days = grd_days
             await self.db.flush()
             logger.debug(f"Updated episode {episode_id} with grd_expected_days={grd_days}")
+
+    # ==================== GRD NORMS DATA UPLOAD ====================
+
+    async def upload_grd_norms_from_excel(self, excel_path: str | Path) -> Dict[str, Any]:
+        """
+        Upload GRD norms data from "normas_eeuu" Excel file.
+
+        This method:
+        - Reads the Excel file (any sheet with GRD and Est Media columns)
+        - Extracts: GRD (GRD code identifier), Est Media (expected days as float)
+        - Creates or updates GrdNorm records
+
+        Args:
+            excel_path: Path to the Excel file with GRD norms data
+
+        Returns:
+            Dictionary with upload statistics:
+            - count: Number of GRD norms created/updated
+            - errors: List of error messages
+        """
+        logger.info(f"Reading GRD norms data from {excel_path}")
+
+        try:
+            # Detect file type
+            file_path = Path(excel_path)
+            is_csv = file_path.suffix.lower() == '.csv'
+
+            df = None
+            sheet_name = None
+
+            # If CSV, read directly with automatic delimiter detection
+            if is_csv:
+                logger.info("Detected CSV file, reading with pandas...")
+                try:
+                    # Try to detect delimiter automatically
+                    # First, try common delimiters
+                    df = None
+                    for sep in [',', ';', '\t', '|']:
+                        try:
+                            temp_df = pd.read_csv(excel_path, sep=sep, nrows=5)
+                            # Check if we got multiple columns (successful parse)
+                            if len(temp_df.columns) > 1:
+                                logger.info(f"Detected delimiter: '{sep}'")
+                                df = pd.read_csv(excel_path, sep=sep)
+                                break
+                        except:
+                            continue
+
+                    # If still no success, use Python engine with auto-detection
+                    if df is None or len(df.columns) == 1:
+                        logger.info("Trying Python engine with auto-detection...")
+                        df = pd.read_csv(excel_path, sep=None, engine='python')
+
+                    sheet_name = "CSV file"
+                    logger.info(f"Successfully read CSV file")
+                    logger.info(f"Found {len(df)} rows")
+                    logger.info(f"Columns: {list(df.columns)}")
+                except Exception as e:
+                    raise ValueError(f"Could not read CSV file: {e}")
+
+            # If Excel, try multiple approaches to read
+            if df is None and not is_csv:
+                # Approach 1: Try to read with ExcelFile (gets sheet names)
+                try:
+                    xl = pd.ExcelFile(excel_path)
+                    logger.info(f"Available sheets: {xl.sheet_names}")
+
+                    if xl.sheet_names:
+                        # Try each sheet
+                        for candidate_sheet in xl.sheet_names:
+                            try:
+                                temp_df = pd.read_excel(excel_path, sheet_name=candidate_sheet)
+                                if not temp_df.empty and len(temp_df.columns) > 0:
+                                    df = temp_df
+                                    sheet_name = candidate_sheet
+                                    logger.info(f"Using sheet: {sheet_name}")
+                                    break
+                            except Exception as e:
+                                logger.warning(f"Could not read sheet '{candidate_sheet}': {e}")
+                                continue
+                except Exception as e:
+                    logger.warning(f"Could not read Excel file with ExcelFile: {e}")
+
+                # Approach 2: If approach 1 failed, try reading without specifying sheet
+                if df is None:
+                    logger.info("Trying to read Excel without specifying sheet name...")
+                    try:
+                        df = pd.read_excel(excel_path, sheet_name=0)  # Read first sheet by index
+                        sheet_name = "First sheet (by index)"
+                        logger.info(f"Successfully read first sheet by index")
+                    except Exception as e:
+                        logger.warning(f"Could not read by index: {e}")
+
+                # Approach 3: Try reading with engine specification
+                if df is None:
+                    logger.info("Trying to read Excel with openpyxl engine explicitly...")
+                    try:
+                        df = pd.read_excel(excel_path, sheet_name=0, engine='openpyxl')
+                        sheet_name = "First sheet (openpyxl)"
+                        logger.info(f"Successfully read with openpyxl engine")
+                    except Exception as e:
+                        logger.warning(f"Could not read with openpyxl: {e}")
+
+            if df is None or df.empty:
+                raise ValueError("Could not read any data from Excel file. The file may be corrupted or empty.")
+
+            logger.info(f"Found {len(df)} rows in sheet '{sheet_name}'")
+            logger.info(f"Columns: {list(df.columns)}")
+
+            # Normalize column names for flexible matching
+            col_map = {}
+            for col in df.columns:
+                if isinstance(col, str):
+                    norm = self._normalize_col_name(col)
+                    col_map[norm] = col
+
+            # Find the GRD column - must be exact match or start with "grd"
+            grd_col = None
+
+            # First try: exact match with "grd"
+            if "grd" in col_map:
+                grd_col = col_map["grd"]
+                logger.info(f"Found GRD column by exact match: {grd_col}")
+
+            # Second try: try other exact candidates
+            if not grd_col:
+                for candidate in ["codigo grd", "codigo", "id grd", "grd code"]:
+                    if candidate in col_map:
+                        grd_col = col_map[candidate]
+                        logger.info(f"Found GRD column by candidate '{candidate}': {grd_col}")
+                        break
+
+            # Third try: column that starts with "grd" (like "grd " or "grd_")
+            if not grd_col:
+                for norm, orig in col_map.items():
+                    if norm.startswith("grd") and len(norm) <= 4:  # "grd" or "grd " max
+                        grd_col = orig
+                        logger.info(f"Found GRD column by prefix match: {grd_col}")
+                        break
+
+            if not grd_col:
+                raise ValueError(f"Could not find GRD column. Available columns: {list(df.columns)}")
+
+            logger.info(f"Using GRD column: '{grd_col}'")
+
+            # Find the Est Media column
+            est_media_col = None
+            for candidates in [["est media", "estmedia", "estancia media", "media", "dias"]]:
+                for c in candidates:
+                    if c in col_map:
+                        est_media_col = col_map[c]
+                        break
+                if est_media_col:
+                    break
+
+            if not est_media_col:
+                # Try to find any column with "est" or "media" in name
+                for norm, orig in col_map.items():
+                    if "est" in norm or "media" in norm:
+                        est_media_col = orig
+                        break
+
+            if not est_media_col:
+                raise ValueError(f"Could not find Est Media column. Available columns: {list(df.columns)}")
+
+            logger.info(f"Using Est Media column: {est_media_col}")
+
+            created_count = 0
+            updated_count = 0
+            errors = []
+
+            for idx, row in df.iterrows():
+                try:
+                    # Get GRD code
+                    grd_raw = row.get(grd_col)
+                    if pd.isna(grd_raw):
+                        continue
+
+                    # Normalize GRD code - convert to string and strip whitespace
+                    grd_id = str(grd_raw).strip()
+
+                    if not grd_id or grd_id.lower() == 'nan':
+                        continue
+
+                    # Get expected days from Est Media
+                    est_media_raw = row.get(est_media_col)
+                    if pd.isna(est_media_raw):
+                        logger.warning(f"Skipping GRD {grd_id}: Est Media is null")
+                        continue
+
+                    try:
+                        # Convert float to int (round to nearest integer)
+                        # Handle both comma and dot as decimal separator
+                        if isinstance(est_media_raw, str):
+                            # Replace comma with dot for European/Latin American format
+                            est_media_str = est_media_raw.replace(',', '.')
+                            expected_days = int(round(float(est_media_str)))
+                        else:
+                            # Already a number
+                            expected_days = int(round(float(est_media_raw)))
+                    except (ValueError, TypeError) as e:
+                        error_msg = f"Could not parse Est Media value '{est_media_raw}' for GRD {grd_id}: {e}"
+                        logger.warning(error_msg)
+                        errors.append(error_msg)
+                        continue
+
+                    # Create or update GRD norm
+                    was_created = await self._create_or_update_grd_norm(grd_id, expected_days)
+                    if was_created:
+                        created_count += 1
+                    else:
+                        updated_count += 1
+
+                    logger.debug(f"{'Created' if was_created else 'Updated'} GRD norm: {grd_id} -> {expected_days} days")
+
+                except Exception as e:
+                    error_msg = f"Error processing row {idx}: {str(e)}"
+                    logger.error(error_msg)
+                    errors.append(error_msg)
+                    continue
+
+            await self.db.commit()
+            logger.info(f"Successfully processed GRD norms: {created_count} created, {updated_count} updated")
+
+            return {
+                "count": created_count + updated_count,
+                "created": created_count,
+                "updated": updated_count,
+                "errors": errors,
+            }
+
+        except Exception as e:
+            logger.error(f"Error uploading GRD norms: {e}")
+            await self.db.rollback()
+            raise
+
+    async def _create_or_update_grd_norm(self, grd_id: str, expected_days: int) -> bool:
+        """
+        Create or update a GRD norm record.
+
+        Returns:
+            True if created, False if updated
+        """
+        from app.models.grd_norm import GrdNorm
+
+        # Check if GRD norm already exists
+        stmt = select(GrdNorm).where(GrdNorm.grd_id == grd_id)
+        result = await self.db.execute(stmt)
+        existing_norm = result.scalar_one_or_none()
+
+        if existing_norm:
+            # Update existing norm
+            existing_norm.expected_days = expected_days
+            await self.db.flush()
+            logger.debug(f"Updated GRD norm: {grd_id} with {expected_days} days")
+            return False
+        else:
+            # Create new norm
+            grd_norm = GrdNorm(
+                grd_id=grd_id,
+                expected_days=expected_days
+            )
+            self.db.add(grd_norm)
+            await self.db.flush()
+            logger.debug(f"Created GRD norm: {grd_id} with {expected_days} days")
+            return True
 
 
 # ==================== MAIN UPLOAD FUNCTIONS ====================

@@ -269,6 +269,61 @@ async def upload_grd(
         Path(tmp_file_path).unlink(missing_ok=True)
 
 
+@router.post("/upload-grd-norms")
+async def upload_grd_norms(
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session)
+) -> Dict[str, Any]:
+    """
+    Upload GRD norms data from "normas_eeuu" file (Excel or CSV).
+
+    Expected file: Excel or CSV file with columns:
+    - GRD: GRD code identifier
+    - Est Media: Expected stay days (float, will be converted to int)
+
+    Returns:
+        Dictionary with upload statistics (created, updated, errors)
+    """
+    # Validate file type
+    if not file.filename.endswith(('.xlsx', '.xls', '.xlsm', '.csv')):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Please upload an Excel file (.xlsx, .xls, .xlsm) or CSV file (.csv)"
+        )
+
+    # Save uploaded file temporarily
+    try:
+        # Determine file extension and use appropriate suffix
+        file_ext = '.csv' if file.filename.endswith('.csv') else '.xlsx'
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_file_path = tmp_file.name
+
+        # Upload GRD norms using the ExcelUploader (works with CSV too)
+        uploader = ExcelUploader(session)
+        result = await uploader.upload_grd_norms_from_excel(tmp_file_path)
+
+        return {
+            "status": "success",
+            "message": f"Successfully processed {result['count']} GRD norms ({result['created']} created, {result['updated']} updated)",
+            "count": result['count'],
+            "created": result['created'],
+            "updated": result['updated'],
+            "errors": result['errors'],
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading GRD norms: {str(e)}"
+        )
+
+    finally:
+        # Clean up temporary file
+        Path(tmp_file_path).unlink(missing_ok=True)
+
+
 @router.post("/upload-all")
 async def upload_all(
     beds_file: UploadFile = File(..., description="Camas NWP1 Excel file"),

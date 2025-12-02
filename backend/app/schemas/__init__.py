@@ -63,3 +63,9 @@ from .social_score_history import (
     SocialScoreHistoryUpdate,
     SocialScoreHistory,
 )
+from .grd_norm import (
+    GrdNormBase,
+    GrdNormCreate,
+    GrdNormUpdate,
+    GrdNorm,
+)
