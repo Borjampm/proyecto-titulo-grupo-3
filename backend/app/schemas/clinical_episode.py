@@ -24,6 +24,11 @@ class ClinicalEpisodeBase(BaseModel):
     episode_identifier: Optional[str] = None
     grd_expected_days: Optional[int] = None  # Expected stay days from GRD
     grd_name: Optional[str] = None  # GRD diagnosis name
+    grd_id: Optional[str] = None  # GRD code identifier
+    overstay_probability: Optional[float] = None  # Predicted overstay probability (0-1)
+    prevision_desc: Optional[str] = None  # Insurance/coverage description
+    tipo_ingreso_desc: Optional[str] = None  # Admission type description
+    servicio_ingreso_desc: Optional[str] = None  # Admission service description
 
 
 class ClinicalEpisodeCreate(ClinicalEpisodeBase):
@@ -39,6 +44,13 @@ class ClinicalEpisodeUpdate(BaseModel):
     bed_id: Optional[UUID] = None
     admission_at: Optional[datetime] = None
     episode_identifier: Optional[str] = None
+    overstay_probability: Optional[float] = None
+    grd_id: Optional[str] = None
+    grd_name: Optional[str] = None
+    grd_expected_days: Optional[int] = None
+    prevision_desc: Optional[str] = None
+    tipo_ingreso_desc: Optional[str] = None
+    servicio_ingreso_desc: Optional[str] = None
 
 
 class ClinicalEpisode(ClinicalEpisodeBase):

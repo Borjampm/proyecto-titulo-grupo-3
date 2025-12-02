@@ -109,8 +109,11 @@ async def predict_overstay() -> dict:
 			age_years = _compute_age_years(patient.birth_date, episode.admission_at or datetime.utcnow())
 			(cdm, tipo_digit, grd_num, sev_digit) = parse_grd_code(grd_id)
 
+			# Also require core categorical descriptors to be present
 			if grd_expected_days is None or age_years is None or (grd_name is None and grd_id is None):
 				# skip missing required
+				continue
+			if episode.prevision_desc is None or episode.tipo_ingreso_desc is None or episode.servicio_ingreso_desc is None:
 				continue
 	
 
@@ -167,20 +170,54 @@ async def predict_overstay() -> dict:
 			probs = model.predict_proba(df)
 
 		# CatBoost returns [p0, p1]; overstay probability assumed class 1
+		# Persist via bulk UPDATE to avoid any ORM tracking edge-cases
+		from sqlalchemy import update
+		import numpy as np
+		
 		updated = 0
+		updates = []
 		for i, ep in enumerate(targets):
 			try:
-				p1 = float(probs[i][1]) if isinstance(probs[i], (list, tuple)) else float(probs[i])
-			except Exception:
+				pr = probs[i]
+				# Handle various predict_proba output formats
+				if isinstance(pr, (list, tuple)):
+					if len(pr) >= 2:
+						p1 = float(pr[1])
+					else:
+						p1 = float(pr[0])
+				elif isinstance(pr, np.ndarray):
+					if pr.ndim == 0:
+						p1 = float(pr)
+					elif pr.ndim == 1:
+						p1 = float(pr[1] if pr.shape[0] >= 2 else pr[0])
+					else:
+						flat = pr.flatten()
+						p1 = float(flat[1] if flat.size >= 2 else flat[0])
+				else:
+					p1 = float(pr)
+				updates.append((ep.id, p1))
+			except Exception as e:
 				continue
-			ep.overstay_probability = p1
-			updated += 1
+		
+		if updates:
+			for ep_id, pval in updates:
+				stmt_upd = (
+					update(ClinicalEpisode)
+					.where(ClinicalEpisode.id == ep_id)
+					.values(overstay_probability=pval)
+				)
+				await session.execute(stmt_upd)
+				updated += 1
+			await session.commit()
 
-		await session.flush()
-		await session.commit()
+		# Verify the update worked
+		stmt_check = select(ClinicalEpisode).where(ClinicalEpisode.overstay_probability.is_not(None))
+		res_check = await session.execute(stmt_check)
+		check_count = len(res_check.scalars().all())
 
 		return {
 			"predicted": len(prepared),
 			"skipped": len(rows) - len(prepared),
 			"updated": updated,
+			"db_rows_with_probability": check_count,
 		}
