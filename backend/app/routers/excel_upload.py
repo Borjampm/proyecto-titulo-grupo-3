@@ -215,14 +215,20 @@ async def upload_grd(
     session: AsyncSession = Depends(get_session)
 ) -> Dict[str, Any]:
     """
-    Upload GRD (expected stay days) data from Excel file.
-    
-    Expected file: Excel file with "egresos 2024-2025" sheet containing:
-    - Episodio CMBD: Episode identifier to match
-    - Estancia Norma GRD: Expected stay days from GRD norm
-    
+    Upload GRD predictions from "resultado prediccion" Excel file.
+
+    Expected file: Excel file with columns:
+    - Episodio: Episode identifier
+    - IR GRD CODE: GRD code in format "{grd_id} - {grd_name}"
+      Example: "51013 - PH TRASPLANTE CARDÍACO Y/O PULMONAR W/MCC"
+
+    The endpoint will:
+    1. Extract GRD ID from IR GRD CODE
+    2. Look up expected days from grd_norms table
+    3. Update episodes with grd_expected_days
+
     Returns:
-        Dictionary with upload statistics (episodes_updated, status, message)
+        Dictionary with upload statistics (episodes_updated, status, message, grd_not_found_count)
     """
     # Validate file type
     if not file.filename.endswith(('.xlsx', '.xls', '.xlsm')):
@@ -248,14 +254,16 @@ async def upload_grd(
             "episodes_updated": result['count'],
             "missing_count": result['missing_count'],
             "missing_ids": result['missing_ids'],
+            "grd_not_found_count": result.get('grd_not_found_count', 0),
+            "grd_not_found_ids": result.get('grd_not_found_ids', []),
         }
-        
+
         # Add debug info if available
         if 'sample_db_ids' in result:
             response['debug_sample_db_ids'] = result['sample_db_ids']
         if 'sample_file_ids' in result:
             response['debug_sample_file_ids'] = result['sample_file_ids']
-        
+
         return response
     
     except Exception as e:
@@ -264,6 +272,61 @@ async def upload_grd(
             detail=f"Error uploading GRD data: {str(e)}"
         )
     
+    finally:
+        # Clean up temporary file
+        Path(tmp_file_path).unlink(missing_ok=True)
+
+
+@router.post("/upload-grd-norms")
+async def upload_grd_norms(
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session)
+) -> Dict[str, Any]:
+    """
+    Upload GRD norms data from "normas_eeuu" file (Excel or CSV).
+
+    Expected file: Excel or CSV file with columns:
+    - GRD: GRD code identifier
+    - Est Media: Expected stay days (float, will be converted to int)
+
+    Returns:
+        Dictionary with upload statistics (created, updated, errors)
+    """
+    # Validate file type
+    if not file.filename.endswith(('.xlsx', '.xls', '.xlsm', '.csv')):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid file type. Please upload an Excel file (.xlsx, .xls, .xlsm) or CSV file (.csv)"
+        )
+
+    # Save uploaded file temporarily
+    try:
+        # Determine file extension and use appropriate suffix
+        file_ext = '.csv' if file.filename.endswith('.csv') else '.xlsx'
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_ext) as tmp_file:
+            content = await file.read()
+            tmp_file.write(content)
+            tmp_file_path = tmp_file.name
+
+        # Upload GRD norms using the ExcelUploader (works with CSV too)
+        uploader = ExcelUploader(session)
+        result = await uploader.upload_grd_norms_from_excel(tmp_file_path)
+
+        return {
+            "status": "success",
+            "message": f"Successfully processed {result['count']} GRD norms ({result['created']} created, {result['updated']} updated)",
+            "count": result['count'],
+            "created": result['created'],
+            "updated": result['updated'],
+            "errors": result['errors'],
+        }
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error uploading GRD norms: {str(e)}"
+        )
+
     finally:
         # Clean up temporary file
         Path(tmp_file_path).unlink(missing_ok=True)

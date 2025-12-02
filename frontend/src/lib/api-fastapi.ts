@@ -335,6 +335,7 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
     daysInStay: daysInStay,
     // Use GRD expected days if available, null if no GRD data
     expectedDays: episode.grd_expected_days ?? null,
+    grdName: episode.grd_name ?? null,
     responsible: 'N/A', // TODO: Obtener del episodio cuando esté disponible
     prevision: undefined,
     contactNumber: undefined,
@@ -1165,6 +1166,29 @@ export async function importGrdFromExcel(file: File): Promise<ExcelImportResult 
     missingIds: response.missing_ids || [],
     debugDbIds: response.debug_sample_db_ids || [],
     debugFileIds: response.debug_sample_file_ids || [],
+  };
+}
+
+/**
+ * POST /excel/upload-grd-norms
+ * Importa normas GRD (normas_eeuu) desde archivo Excel
+ *
+ * Expects a file with columns:
+ * - GRD: GRD code identifier
+ * - Est Media: Expected stay days (float, will be converted to int)
+ */
+export async function importGrdNormsFromExcel(file: File): Promise<ExcelImportResult & { created?: number; updated?: number }> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const response = await apiClient.uploadFile<any>('/excel/upload-grd-norms', formData);
+
+  return {
+    success: response.status === 'success',
+    imported: response.count || 0,
+    errors: response.errors || [],
+    created: response.created || 0,
+    updated: response.updated || 0,
   };
 }
 

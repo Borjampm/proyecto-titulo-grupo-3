@@ -276,8 +276,8 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
           <div className="flex items-center gap-3">
             <FileText className="w-5 h-5 text-muted-foreground" />
             <div>
-              <p className="text-muted-foreground">GRD (Días Esperados)</p>
-              <p>{patient.expectedDays !== null ? `${patient.expectedDays} días` : 'Sin datos GRD'}</p>
+              <p className="text-muted-foreground">GRD Predecido</p>
+              <p>{patient.grdName || 'Sin datos GRD'}</p>
             </div>
           </div>
         </Card>
