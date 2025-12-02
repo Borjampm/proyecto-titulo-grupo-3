@@ -31,3 +31,4 @@ def downgrade() -> None:
     # Remove grd_expected_days column
     op.drop_column('clinical_episodes', 'grd_expected_days')
 
+
