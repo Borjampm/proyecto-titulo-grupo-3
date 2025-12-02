@@ -18,6 +18,7 @@ export interface Patient {
   contactNumber?: string; // Número de contacto
   daysInStay: number;
   expectedDays: number | null; // null when no GRD data available
+  grdName?: string | null; // GRD diagnosis name
   riskLevel: RiskLevel;
   socialRisk: boolean;
   financialRisk: boolean;

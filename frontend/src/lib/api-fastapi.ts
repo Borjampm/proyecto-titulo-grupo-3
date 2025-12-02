@@ -335,6 +335,7 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
     daysInStay: daysInStay,
     // Use GRD expected days if available, null if no GRD data
     expectedDays: episode.grd_expected_days ?? null,
+    grdName: episode.grd_name ?? null,
     responsible: 'N/A', // TODO: Obtener del episodio cuando esté disponible
     prevision: undefined,
     contactNumber: undefined,
