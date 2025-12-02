@@ -23,6 +23,7 @@ class ClinicalEpisodeBase(BaseModel):
     admission_at: datetime = Field(default_factory=datetime.utcnow)
     episode_identifier: Optional[str] = None
     grd_expected_days: Optional[int] = None  # Expected stay days from GRD
+    grd_name: Optional[str] = None  # GRD diagnosis name
 
 
 class ClinicalEpisodeCreate(ClinicalEpisodeBase):

@@ -70,6 +70,11 @@ class ClinicalEpisode(Base):
         nullable=True,
         comment="Expected stay days from GRD (Estancia Norma GRD)"
     )
+    grd_name: Mapped[str] = mapped_column(
+        String(500),
+        nullable=True,
+        comment="GRD diagnosis name (e.g., PH TRASPLANTE CARDÍACO Y/O PULMONAR W/MCC)"
+    )
     created_at: Mapped[DateTime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now()

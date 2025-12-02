@@ -1897,17 +1897,22 @@ class ExcelUploader:
 
                     grd_code_str = str(grd_code_raw).strip()
 
-                    # Extract GRD ID from format "{grd_id} - {grd_name}"
-                    # Example: "51013 - PH TRASPLANTE CARDÍACO Y/O PULMONAR W/MCC" -> "51013"
+                    # Extract GRD ID and name from format "{grd_id} - {grd_name}"
+                    # Example: "51013 - PH TRASPLANTE CARDÍACO Y/O PULMONAR W/MCC" -> "51013", "PH TRASPLANTE CARDÍACO Y/O PULMONAR W/MCC"
+                    grd_name = None
                     if ' - ' in grd_code_str:
-                        grd_id = grd_code_str.split(' - ')[0].strip()
+                        parts = grd_code_str.split(' - ', 1)  # Split only on first occurrence
+                        grd_id = parts[0].strip()
+                        grd_name = parts[1].strip() if len(parts) > 1 else None
                     elif '-' in grd_code_str:
-                        grd_id = grd_code_str.split('-')[0].strip()
+                        parts = grd_code_str.split('-', 1)
+                        grd_id = parts[0].strip()
+                        grd_name = parts[1].strip() if len(parts) > 1 else None
                     else:
                         # No separator found, use the whole string
                         grd_id = grd_code_str
 
-                    logger.debug(f"Episode {episode_identifier}: Extracted GRD ID '{grd_id}' from '{grd_code_str}'")
+                    logger.debug(f"Episode {episode_identifier}: Extracted GRD ID '{grd_id}' and name '{grd_name}' from '{grd_code_str}'")
 
                     # Look up expected days from grd_norms table
                     from app.models.grd_norm import GrdNorm
@@ -1926,18 +1931,18 @@ class ExcelUploader:
                     # Find and update episode - try exact match first
                     if episode_identifier in episode_map:
                         episode_id = episode_map[episode_identifier]
-                        await self._update_episode_grd(episode_id, grd_expected_days)
+                        await self._update_episode_grd(episode_id, grd_expected_days, grd_name)
                         updated_count += 1
-                        logger.debug(f"Updated episode {episode_identifier} with GRD {grd_id} ({grd_expected_days} days)")
+                        logger.debug(f"Updated episode {episode_identifier} with GRD {grd_id} ({grd_expected_days} days) - {grd_name}")
                     else:
                         # Try to find by searching for partial match or different format
                         found = False
                         for db_identifier, ep_id in episode_map.items():
                             # Try matching just the numeric part
                             if episode_identifier in db_identifier or db_identifier in episode_identifier:
-                                await self._update_episode_grd(ep_id, grd_expected_days)
+                                await self._update_episode_grd(ep_id, grd_expected_days, grd_name)
                                 updated_count += 1
-                                logger.debug(f"Updated episode {db_identifier} (matched from {episode_identifier}) with GRD {grd_id} ({grd_expected_days} days)")
+                                logger.debug(f"Updated episode {db_identifier} (matched from {episode_identifier}) with GRD {grd_id} ({grd_expected_days} days) - {grd_name}")
                                 found = True
                                 break
 
@@ -1971,16 +1976,18 @@ class ExcelUploader:
             await self.db.rollback()
             raise
 
-    async def _update_episode_grd(self, episode_id: UUID, grd_days: int) -> None:
-        """Update the grd_expected_days field on a ClinicalEpisode."""
+    async def _update_episode_grd(self, episode_id: UUID, grd_days: int, grd_name: str = None) -> None:
+        """Update the grd_expected_days and grd_name fields on a ClinicalEpisode."""
         stmt = select(ClinicalEpisode).where(ClinicalEpisode.id == episode_id)
         result = await self.db.execute(stmt)
         episode = result.scalar_one_or_none()
 
         if episode:
             episode.grd_expected_days = grd_days
+            if grd_name:
+                episode.grd_name = grd_name
             await self.db.flush()
-            logger.debug(f"Updated episode {episode_id} with grd_expected_days={grd_days}")
+            logger.debug(f"Updated episode {episode_id} with grd_expected_days={grd_days}, grd_name={grd_name}")
 
     # ==================== GRD NORMS DATA UPLOAD ====================
 
