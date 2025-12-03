@@ -35,7 +35,7 @@ export interface Patient {
 export interface Alert {
   id: string;
   patientId: string;
-  type: 'stay-deviation' | 'social-risk';
+  type: 'stay-deviation' | 'social-risk' | 'predicted-overstay';
   severity: RiskLevel;
   message: string;
   createdAt: string;

@@ -14,6 +14,7 @@ class AlertType(enum.Enum):
     """Enum for alert types"""
     STAY_DEVIATION = "stay-deviation"
     SOCIAL_RISK = "social-risk"
+    PREDICTED_OVERSTAY = "predicted-overstay"
 
 
 class AlertSeverity(enum.Enum):

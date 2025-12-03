@@ -300,10 +300,14 @@ export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardPr
                       className={
                         alert.type === 'stay-deviation' 
                           ? 'bg-orange-50 text-orange-700 border-orange-300'
-                          : 'bg-purple-50 text-purple-700 border-purple-300'
+                          : alert.type === 'predicted-overstay'
+                            ? 'bg-blue-50 text-blue-700 border-blue-300'
+                            : 'bg-purple-50 text-purple-700 border-purple-300'
                       }
                     >
-                      {alert.type === 'stay-deviation' ? 'Desviación de Estadía' : 'Riesgo Social'}
+                      {alert.type === 'stay-deviation' ? 'Desviación de Estadía' : 
+                       alert.type === 'predicted-overstay' ? 'Predicción de Sobrestadía' :
+                       'Riesgo Social'}
                     </Badge>
                     <Badge 
                       variant="outline"

@@ -21,7 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     """Upgrade schema."""
     # Create enum types for alert_type and severity
-    alerttype = postgresql.ENUM('stay-deviation', 'social-risk', name='alerttype', create_type=True)
+    alerttype = postgresql.ENUM('stay-deviation', 'social-risk', 'predicted-overstay', name='alerttype', create_type=True)
     alerttype.create(op.get_bind(), checkfirst=True)
     
     alertseverity = postgresql.ENUM('low', 'medium', 'high', 'unknown', name='alertseverity', create_type=True)
@@ -31,7 +31,7 @@ def upgrade() -> None:
     op.create_table('alerts',
         sa.Column('id', sa.UUID(), nullable=False),
         sa.Column('episode_id', sa.UUID(), nullable=False),
-        sa.Column('alert_type', postgresql.ENUM('stay-deviation', 'social-risk', name='alerttype', create_type=False), nullable=False),
+        sa.Column('alert_type', postgresql.ENUM('stay-deviation', 'social-risk', 'predicted-overstay', name='alerttype', create_type=False), nullable=False),
         sa.Column('severity', postgresql.ENUM('low', 'medium', 'high', 'unknown', name='alertseverity', create_type=False), nullable=False),
         sa.Column('message', sa.String(length=1000), nullable=False),
         sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('true')),

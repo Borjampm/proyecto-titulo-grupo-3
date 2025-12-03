@@ -143,6 +143,14 @@ export const mockAlerts: Alert[] = [
     severity: 'high',
     message: 'Alta complejidad social: familia no puede asumir cuidados',
     createdAt: '2025-10-23T11:25:00'
+  },
+  {
+    id: 'a6',
+    patientId: '3',
+    type: 'predicted-overstay',
+    severity: 'medium',
+    message: 'Predicción de sobrestadía: 65% probabilidad',
+    createdAt: '2025-10-24T08:30:00'
   }
 ];
 
