@@ -2046,7 +2046,7 @@ class ExcelUploader:
         delta = now - admission_at
         return max(0, delta.days)
     
-    async def _update_episode_grd(self, episode_id: UUID, grd_days: int, grd_name: str = None) -> None:
+    async def _update_episode_grd(self, episode_id: UUID, grd_days: int, grd_name: str = None, grd_id: UUID | None = None) -> None:
         """
         Update the grd_expected_days and grd_name fields on a ClinicalEpisode.
         Automatically creates stay-deviation alerts if the patient is staying longer than expected.
