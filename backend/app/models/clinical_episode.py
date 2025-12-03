@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from app.models.clinical_episode_information import ClinicalEpisodeInformation
     from app.models.task_instance import TaskInstance
     from app.models.social_score_history import SocialScoreHistory
+    from app.models.alert import Alert
 
 
 class EpisodeStatus(enum.Enum):
@@ -136,6 +137,11 @@ class ClinicalEpisode(Base):
     )
     social_score_history: Mapped[list["SocialScoreHistory"]] = relationship(
         "SocialScoreHistory",
+        back_populates="clinical_episode",
+        cascade="all, delete-orphan"
+    )
+    alerts: Mapped[list["Alert"]] = relationship(
+        "Alert",
         back_populates="clinical_episode",
         cascade="all, delete-orphan"
     )

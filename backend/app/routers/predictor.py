@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db import SessionLocal
 from app.models.clinical_episode import ClinicalEpisode, EpisodeStatus
 from app.models.patient import Patient
+from app.models.alert import Alert, AlertType, AlertSeverity
 
 router = APIRouter()
 
@@ -208,6 +209,27 @@ async def predict_overstay() -> dict:
 				)
 				await session.execute(stmt_upd)
 				updated += 1
+				
+				# Create predicted-overstay alert if probability >= 0.5
+				if pval >= 0.5:
+					# Determine severity based on probability
+					if pval >= 0.7:
+						severity = AlertSeverity.HIGH
+					else:  # 0.5 <= pval < 0.7
+						severity = AlertSeverity.MEDIUM
+					
+					# Format probability as percentage
+					prob_percent = int(pval * 100)
+					
+					alert = Alert(
+						episode_id=ep_id,
+						alert_type=AlertType.PREDICTED_OVERSTAY,
+						severity=severity,
+						message=f"Predicción de sobrestadía: {prob_percent}% probabilidad",
+						is_active=True,
+						created_by="Sistema (modelo predictivo)"
+					)
+					session.add(alert)
 			await session.commit()
 
 		# Verify the update worked

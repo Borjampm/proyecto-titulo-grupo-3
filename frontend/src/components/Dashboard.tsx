@@ -3,8 +3,8 @@ import { Card } from './ui/card';
 import { Badge } from './ui/badge';
 import { Users, AlertTriangle, TrendingUp, Clock, Activity, ClipboardList, Circle, Calendar } from 'lucide-react';
 import { RiskBadge } from './RiskBadge';
-import { getDashboardStats, getClinicalEpisodes, getAllTasks } from '../lib/api-fastapi';
-import { DashboardStats, Patient, Task } from '../types';
+import { getDashboardStats, getClinicalEpisodes, getAllTasks, getAllAlerts, getClinicalEpisode } from '../lib/api-fastapi';
+import { DashboardStats, Patient, Task, Alert } from '../types';
 
 interface DashboardProps {
   onNavigateToPatients?: (filters: { sortBy?: string; socialScoreRange?: [number, number]; caseStatus?: string; riskLevel?: string }) => void;
@@ -16,6 +16,7 @@ export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardPr
   const [pendingTasks, setPendingTasks] = useState<Task[]>([]);
   const [totalOpenTasks, setTotalOpenTasks] = useState(0);
   const [urgentPatients, setUrgentPatients] = useState<Patient[]>([]);
+  const [activeAlerts, setActiveAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -25,14 +26,16 @@ export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardPr
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const [statsData, urgentPatientsData, tasksData] = await Promise.all([
+      const [statsData, urgentPatientsData, tasksData, alertsData] = await Promise.all([
         getDashboardStats(),
         getClinicalEpisodes({ riskLevel: 'high', pageSize: 5 }),
         getAllTasks({ openOnly: true, orderByDueDate: true }),
+        getAllAlerts(),
       ]);
       
       setStats(statsData);
       setUrgentPatients(urgentPatientsData.data);
+      setActiveAlerts(alertsData);
       // Filter pending tasks and limit to 5 for display
       const pending = tasksData.filter(t => t.status === 'pending');
       setPendingTasks(pending.slice(0, 5));
@@ -41,6 +44,15 @@ export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardPr
       console.error('Error loading dashboard:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAlertClick = async (alert: Alert) => {
+    try {
+      const episode = await getClinicalEpisode(alert.patientId);
+      onSelectPatient?.(episode);
+    } catch (error) {
+      console.error('Error loading episode for alert:', error);
     }
   };
 
@@ -256,6 +268,80 @@ export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardPr
           </div>
         </Card>
       </div>
+
+      {/* Active Alerts - Full Width */}
+      <Card className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5 text-orange-600" />
+            <h3>Alertas Activas</h3>
+          </div>
+          <Badge variant="secondary">{activeAlerts.length} alertas</Badge>
+        </div>
+        <div className="space-y-3 max-h-96 overflow-y-auto">
+          {activeAlerts.length === 0 ? (
+            <p className="text-muted-foreground">No hay alertas activas</p>
+          ) : (
+            activeAlerts.map(alert => (
+              <div 
+                key={alert.id} 
+                className="flex items-start gap-3 p-3 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => handleAlertClick(alert)}
+              >
+                <AlertTriangle className={`w-5 h-5 mt-0.5 shrink-0 ${
+                  alert.severity === 'high' ? 'text-red-600' :
+                  alert.severity === 'medium' ? 'text-yellow-600' :
+                  'text-blue-600'
+                }`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Badge 
+                      variant="outline"
+                      className={
+                        alert.type === 'stay-deviation' 
+                          ? 'bg-orange-50 text-orange-700 border-orange-300'
+                          : alert.type === 'predicted-overstay'
+                            ? 'bg-blue-50 text-blue-700 border-blue-300'
+                            : 'bg-purple-50 text-purple-700 border-purple-300'
+                      }
+                    >
+                      {alert.type === 'stay-deviation' ? 'Desviación de Estadía' : 
+                       alert.type === 'predicted-overstay' ? 'Predicción de Sobrestadía' :
+                       'Riesgo Social'}
+                    </Badge>
+                    <Badge 
+                      variant="outline"
+                      className={
+                        alert.severity === 'high' ? 'bg-red-50 text-red-700 border-red-200' :
+                        alert.severity === 'medium' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
+                        'bg-blue-50 text-blue-700 border-blue-200'
+                      }
+                    >
+                      {alert.severity === 'high' ? 'Alta' : alert.severity === 'medium' ? 'Media' : 'Baja'}
+                    </Badge>
+                  </div>
+                  <p className="font-medium text-sm">{alert.message}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <p className="text-xs font-semibold text-gray-700">
+                      {alert.patientName || 'Paciente desconocido'}
+                    </p>
+                    <span className="text-xs text-muted-foreground">•</span>
+                    <p className="text-xs text-muted-foreground">
+                      {new Date(alert.createdAt).toLocaleString('es-ES')}
+                    </p>
+                    {alert.createdBy && (
+                      <>
+                        <span className="text-xs text-muted-foreground">•</span>
+                        <p className="text-xs text-muted-foreground">{alert.createdBy}</p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
 
       
     </div>

@@ -145,12 +145,12 @@ export const mockAlerts: Alert[] = [
     createdAt: '2025-10-23T11:25:00'
   },
   {
-    id: 'a5',
+    id: 'a6',
     patientId: '3',
-    type: 'financial-risk',
+    type: 'predicted-overstay',
     severity: 'medium',
-    message: 'Cobertura financiera insuficiente detectada',
-    createdAt: '2025-10-21T09:05:00'
+    message: 'Predicción de sobrestadía: 65% probabilidad',
+    createdAt: '2025-10-24T08:30:00'
   }
 ];
 

@@ -16,6 +16,7 @@ from app.models.episode_document import EpisodeDocument
 from app.models.task_instance import TaskInstance
 from app.models.task_status_history import TaskStatusHistory
 from app.models.social_score_history import SocialScoreHistory
+from app.models.alert import Alert as AlertModel
 from app.schemas.clinical_episode import (
     ClinicalEpisodeWithPatient,
     ClinicalEpisodeWithIncludes,
@@ -559,6 +560,33 @@ async def get_episode_history(
                     "notes": score.notes
                 }
             ))
+    
+    # 6. Alert creation events
+    alerts_result = await session.execute(
+        select(AlertModel)
+        .where(AlertModel.episode_id == episode_id)
+        .order_by(AlertModel.created_at)
+    )
+    alerts = alerts_result.scalars().all()
+    
+    for alert in alerts:
+        description = f"Alerta creada: {alert.message}"
+        if alert.created_by:
+            description += f" (por {alert.created_by})"
+        
+        events.append(HistoryEvent(
+            event_type=HistoryEventType.ALERT_CREATED,
+            event_date=alert.created_at,
+            description=description,
+            metadata={
+                "alert_id": str(alert.id),
+                "alert_type": alert.alert_type.value,
+                "severity": alert.severity.value,
+                "message": alert.message,
+                "is_active": alert.is_active,
+                "created_by": alert.created_by
+            }
+        ))
     
     # Sort events by date
     events.sort(key=lambda x: x.event_date)

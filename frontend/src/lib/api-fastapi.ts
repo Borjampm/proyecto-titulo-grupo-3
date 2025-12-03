@@ -28,6 +28,7 @@ import {
   AuthResponse,
   PaginatedResponse,
   PatientFilters,
+  RiskLevel,
   ExcelImportResult,
   Worker,
   WorkerSimple,
@@ -694,37 +695,115 @@ export async function closeEpisode(id: string): Promise<void> {
 // =============================================================================
 
 /**
- * GET /patients/:patientId/alerts
+ * GET /clinical-episodes/{episode_id}/alerts
  * Obtiene todas las alertas de un paciente
- * NOTA: No implementado en el backend aún
  */
 export async function getPatientAlerts(patientId: string): Promise<Alert[]> {
   if (config.USE_MOCK_DATA) {
     return mockAlerts.filter((a) => a.patientId === patientId);
   }
-  // TODO: Implementar cuando el backend tenga alertas
-  return [];
+  
+  const endpoint = `/clinical-episodes/${patientId}/alerts?active_only=true`;
+  const response = await apiClient.get<any[]>(endpoint);
+  
+  // Transform backend alerts to frontend format
+  return response.map((alert: any) => ({
+    id: alert.id,
+    patientId: alert.episode_id,
+    type: alert.alert_type as 'stay-deviation' | 'social-risk',
+    severity: alert.severity as RiskLevel,
+    message: alert.message,
+    createdAt: alert.created_at,
+    isActive: alert.is_active,
+    createdBy: alert.created_by
+  }));
 }
 
 /**
  * GET /alerts
  * Obtiene todas las alertas activas del sistema
- * NOTA: No implementado en el backend aún
  */
 export async function getAllAlerts(): Promise<Alert[]> {
   if (config.USE_MOCK_DATA) {
     return mockAlerts;
   }
-  // TODO: Implementar cuando el backend tenga alertas
-  return [];
+  
+  // Request all alerts with a high page_size to ensure we get everything
+  const endpoint = '/alerts?active_only=true&page_size=1000';
+  const response = await apiClient.get<any[]>(endpoint);
+  
+  // Transform backend alerts to frontend format
+  return response.map((alert: any) => ({
+    id: alert.id,
+    patientId: alert.episode_id,
+    type: alert.alert_type as 'stay-deviation' | 'social-risk',
+    severity: alert.severity as RiskLevel,
+    message: alert.message,
+    createdAt: alert.created_at,
+    isActive: alert.is_active,
+    createdBy: alert.created_by,
+    patientName: alert.patient_name || 'Paciente desconocido'
+  }));
+}
+
+/**
+ * POST /clinical-episodes/{episode_id}/alerts
+ * Crea una alerta social manualmente
+ */
+export async function createAlert(
+  episodeId: string, 
+  alert: {
+    message: string;
+    severity: RiskLevel;
+    createdBy?: string;
+  }
+): Promise<Alert> {
+  const endpoint = `/clinical-episodes/${episodeId}/alerts`;
+  const response = await apiClient.post<any>(endpoint, {
+    message: alert.message,
+    severity: alert.severity,
+    created_by: alert.createdBy
+  });
+  
+  return {
+    id: response.id,
+    patientId: response.episode_id,
+    type: response.alert_type as 'stay-deviation' | 'social-risk',
+    severity: response.severity as RiskLevel,
+    message: response.message,
+    createdAt: response.created_at,
+    isActive: response.is_active,
+    createdBy: response.created_by
+  };
+}
+
+/**
+ * PATCH /alerts/{alert_id}/resolve
+ * Marca una alerta como resuelta (is_active = false)
+ */
+export async function resolveAlert(alertId: string): Promise<Alert> {
+  const endpoint = `/alerts/${alertId}/resolve`;
+  const response = await apiClient.patch<any>(endpoint, {});
+  
+  return {
+    id: response.id,
+    patientId: response.episode_id,
+    type: response.alert_type as 'stay-deviation' | 'social-risk',
+    severity: response.severity as RiskLevel,
+    message: response.message,
+    createdAt: response.created_at,
+    isActive: response.is_active,
+    createdBy: response.created_by
+  };
 }
 
 /**
  * POST /alerts/:id/acknowledge
  * Marca una alerta como reconocida/leída
+ * NOTA: Not implemented yet - reserved for future functionality
  */
 export async function acknowledgeAlert(id: string): Promise<void> {
-  // TODO: Implementar cuando el backend tenga alertas
+  // TODO: Implementar cuando se agregue funcionalidad de reconocimiento de alertas
 }
 
 // =============================================================================
