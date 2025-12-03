@@ -345,6 +345,7 @@ function transformClinicalEpisodeToPatient(episode: any): Patient {
     financialRisk: false, // TODO: Implementar cuando esté disponible
     socialScore: socialScore,
     socialScoreReason: socialScoreReason,
+    overstayProbability: episode.overstay_probability ?? null,
     status: status,
     caseStatus: caseStatus,
     createdAt: episode.created_at,
@@ -576,6 +577,16 @@ export async function getClinicalEpisodes(filters?: PatientFilters): Promise<Pag
   // Paginación
   params.append('page', (filters?.page || 1).toString());
   params.append('page_size', (filters?.pageSize || 20).toString());
+
+  // Filtro por overstay_probability
+  if (filters?.overstayProbabilityMin !== undefined) {
+    params.append('overstay_probability_min', filters.overstayProbabilityMin.toString());
+  }
+
+  // Ordenar por overstay_probability
+  if (filters?.sortByOverstayProbability) {
+    params.append('sort_by_overstay_probability', 'true');
+  }
 
   // Incluir datos del paciente
   params.append('include', 'patient,social_score');
@@ -1044,56 +1055,67 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     return mockDashboardStats;
   }
 
-  // Obtener todos los episodios para calcular estadísticas (paginar si hay más de 100)
-  const allEpisodes: Patient[] = [];
-  let page = 1;
-  const pageSize = 100;
-  
-  // Fetch all pages
-  while (true) {
-    const response = await getClinicalEpisodes({ page, pageSize });
-    allEpisodes.push(...response.data);
+  try {
+    // Try to use the new backend endpoint
+    const endpoint = '/clinical-episodes/dashboard/stats';
+    const stats = await apiClient.get<DashboardStats>(endpoint);
+    return stats;
+  } catch (error) {
+    // Fallback to local calculation if endpoint is not available
+    console.warn('Dashboard stats endpoint not available, falling back to local calculation', error);
     
-    if (response.data.length < pageSize || page >= (response.pagination?.totalPages || 1)) {
-      break;
+    // Obtener todos los episodios para calcular estadísticas (paginar si hay más de 100)
+    const allEpisodes: Patient[] = [];
+    let page = 1;
+    const pageSize = 100;
+    
+    // Fetch all pages
+    while (true) {
+      const response = await getClinicalEpisodes({ page, pageSize });
+      allEpisodes.push(...response.data);
+      
+      if (response.data.length < pageSize || page >= (response.pagination?.totalPages || 1)) {
+        break;
+      }
+      page++;
     }
-    page++;
+    
+    // Filter to only include open cases - each episode is a "case"
+    const openCases = allEpisodes.filter(p => p.caseStatus === 'open');
+    const totalPatients = openCases.length;
+    
+    // Calculate risk levels based on overstay_probability
+    const highRiskPatients = openCases.filter(p => p.overstayProbability !== null && p.overstayProbability !== undefined && p.overstayProbability >= 0.75).length;
+    const mediumRiskPatients = openCases.filter(p => p.overstayProbability !== null && p.overstayProbability !== undefined && p.overstayProbability >= 0.5 && p.overstayProbability < 0.75).length;
+    const lowRiskPatients = totalPatients - highRiskPatients - mediumRiskPatients;
+
+    // Calcular promedio de días de estadía (solo casos abiertos)
+    const totalDays = openCases.reduce((sum, p) => sum + p.daysInStay, 0);
+    const averageStayDays = totalPatients > 0 ? Math.round(totalDays / totalPatients) : 0;
+
+    // Calcular desviaciones (casos con días de estadía mayor a los esperados, solo casos abiertos con GRD)
+    const deviations = openCases.filter(p => p.expectedDays !== null && p.daysInStay > p.expectedDays).length;
+
+    // Calcular estadísticas de riesgo social (solo casos abiertos)
+    // High: score > 10 (same as score >= 11)
+    const highSocialRisk = openCases.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore >= 11).length;
+    // Medium: score 6-10
+    const mediumSocialRisk = openCases.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore >= 6 && p.socialScore <= 10).length;
+    // Low: score 0-5
+    const lowSocialRisk = openCases.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore >= 0 && p.socialScore <= 5).length;
+
+    return {
+      totalPatients,
+      highRisk: highRiskPatients,
+      mediumRisk: mediumRiskPatients,
+      lowRisk: lowRiskPatients,
+      highSocialRisk,
+      mediumSocialRisk,
+      lowSocialRisk,
+      averageStayDays,
+      deviations,
+    };
   }
-  
-  // Filter to only include open cases - each episode is a "case"
-  const openCases = allEpisodes.filter(p => p.caseStatus === 'open');
-  const totalPatients = openCases.length;
-  
-  const highRiskPatients = openCases.filter(p => p.riskLevel === 'high').length;
-  const mediumRiskPatients = openCases.filter(p => p.riskLevel === 'medium').length;
-  const lowRiskPatients = openCases.filter(p => p.riskLevel === 'low').length;
-
-  // Calcular promedio de días de estadía (solo casos abiertos)
-  const totalDays = openCases.reduce((sum, p) => sum + p.daysInStay, 0);
-  const averageStayDays = totalPatients > 0 ? Math.round(totalDays / totalPatients) : 0;
-
-  // Calcular desviaciones (casos con días de estadía mayor a los esperados, solo casos abiertos con GRD)
-  const deviations = openCases.filter(p => p.expectedDays !== null && p.daysInStay > p.expectedDays).length;
-
-  // Calcular estadísticas de riesgo social (solo casos abiertos)
-  // High: score > 10 (same as score >= 11)
-  const highSocialRisk = openCases.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore >= 11).length;
-  // Medium: score 6-10
-  const mediumSocialRisk = openCases.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore >= 6 && p.socialScore <= 10).length;
-  // Low: score 0-5
-  const lowSocialRisk = openCases.filter(p => p.socialScore !== null && p.socialScore !== undefined && p.socialScore >= 0 && p.socialScore <= 5).length;
-
-  return {
-    totalPatients,
-    highRisk: highRiskPatients,
-    mediumRisk: mediumRiskPatients,
-    lowRisk: lowRiskPatients,
-    highSocialRisk,
-    mediumSocialRisk,
-    lowSocialRisk,
-    averageStayDays,
-    deviations,
-  };
 }
 
 // =============================================================================
