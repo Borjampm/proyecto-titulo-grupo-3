@@ -147,3 +147,18 @@ class ReferralResponse(ClinicalEpisodeBase):
     updated_at: datetime
     
     model_config = ConfigDict(from_attributes=True)
+
+
+class DashboardStatsResponse(BaseModel):
+    """Schema for dashboard statistics response"""
+    totalPatients: int
+    highRisk: int  # overstay_probability >= 0.75
+    mediumRisk: int  # overstay_probability >= 0.5 AND < 0.75
+    lowRisk: int
+    highSocialRisk: int
+    mediumSocialRisk: int
+    lowSocialRisk: int
+    averageStayDays: int
+    deviations: int
+    
+    model_config = ConfigDict(from_attributes=True)

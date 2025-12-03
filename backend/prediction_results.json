@@ -1,0 +1,33 @@
+{
+  "timestamp": "2025-12-02T23:57:21.350766",
+  "total_predictions": 3,
+  "summary": {
+    "high_risk": 0,
+    "medium_risk": 1,
+    "low_risk": 2,
+    "average_probability": 0.49645157575218524
+  },
+  "results": [
+    {
+      "episode_id": "5e9a3ecc-1bfd-4faf-912a-61b8ad03a213",
+      "patient": "Raúl Fernández",
+      "grd": "PH VENTILACIÓN MECÁNICA PROLONGADA SIN TRAQUEOSTOMÍA W/MCC",
+      "probability": 0.6613219587617377,
+      "risk_level": "🟡 RIESGO MEDIO"
+    },
+    {
+      "episode_id": "d08eea3a-82c1-4f9d-81ae-db44b3f6fcf2",
+      "patient": "Lucía Flores",
+      "grd": "MH LINFOMA Y LEUCEMIA NO AGUDA W/MCC",
+      "probability": 0.40628241956491623,
+      "risk_level": "🟢 BAJO RIESGO"
+    },
+    {
+      "episode_id": "b946afb0-234d-4542-9ade-6760ca68984f",
+      "patient": "Claudio Navarro",
+      "grd": "MH HEMORRAGIA INTRACRANEAL NO TRAUMÁTICA W/MCC",
+      "probability": 0.4217503489299018,
+      "risk_level": "🟢 BAJO RIESGO"
+    }
+  ]
+}

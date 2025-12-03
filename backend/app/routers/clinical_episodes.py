@@ -1,13 +1,16 @@
 from fastapi import APIRouter, HTTPException
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_, and_
+from sqlalchemy import select, func, or_, and_, update
 from fastapi import Depends
 from app.deps import get_session
 from sqlalchemy.orm import selectinload
 from typing import Union
 from uuid import UUID
 from datetime import datetime
+from pathlib import Path
+import pandas as pd
+import numpy as np
 
 from app.models.clinical_episode import ClinicalEpisode as ClinicalEpisodeModel, EpisodeStatus
 from app.models.patient import Patient
@@ -26,13 +29,171 @@ from app.schemas.clinical_episode import (
     EpisodeHistory,
     PaginatedClinicalEpisodes,
     ReferralCreate,
-    ReferralResponse
+    ReferralResponse,
+    DashboardStatsResponse
 )
 from app.schemas.social_score_history import SocialScoreHistory as SocialScoreHistorySchema
 
 
 
 router = APIRouter(prefix="/clinical-episodes", tags=["clinical-episodes"])
+
+
+# Helper functions for prediction (from predictor.py)
+def extract_complication_from_text(text: str) -> str:
+    if text is None:
+        return 0
+    import re
+    s = str(text).upper()
+    if re.search(r"W\/MCC", s):
+        return 1
+    if re.search(r"W\/CC", s):
+        return 1
+    return 0
+
+
+def parse_grd_code(code):
+    """Parse GRD code into components"""
+    if code is None:
+        return (None, None, None, None)
+    s = str(code).strip()
+    s_digits = "".join(ch for ch in s if ch.isdigit())
+    if len(s_digits) < 5:
+        s_digits = s_digits.zfill(6)
+    cdm = s_digits[0:2]
+    tipo_digit = s_digits[2:3]
+    grd_num = s_digits[3:5]
+    sev_digit = s_digits[5:6] if len(s_digits) >= 6 else None
+    return (cdm, tipo_digit, grd_num, sev_digit)
+
+
+def _compute_age_years(birth_date: datetime, ref_dt: datetime) -> float:
+    if not birth_date:
+        return None
+    try:
+        delta_days = (ref_dt.date() - birth_date).days
+        return round(delta_days / 365.25, 2)
+    except Exception:
+        return None
+
+
+def parse_type(type_str: str):
+    if type_str == "Urgencias":
+        return "Urgente"
+    else:
+        return "Programado"
+
+
+async def calculate_probability_for_episode(episode: ClinicalEpisodeModel, patient: Patient, session: AsyncSession) -> float | None:
+    """Calculate overstay probability for a single episode if all required fields are present"""
+    try:
+        from catboost import CatBoostClassifier, Pool
+    except Exception:
+        return None
+    
+    model_path = Path(__file__).resolve().parents[2] / "catboost_grd.cbm"
+    if not model_path.exists():
+        return None
+    
+    try:
+        model = CatBoostClassifier()
+        model.load_model(str(model_path))
+    except Exception:
+        return None
+    
+    # Check required fields
+    grd_name = episode.grd_name
+    grd_id = episode.grd_id
+    grd_expected_days = episode.grd_expected_days
+    age_years = _compute_age_years(patient.birth_date, episode.admission_at or datetime.utcnow())
+    
+    if grd_expected_days is None or age_years is None or (grd_name is None and grd_id is None):
+        return None
+    if episode.prevision_desc is None or episode.tipo_ingreso_desc is None or episode.servicio_ingreso_desc is None:
+        return None
+    
+    (cdm, tipo_digit, grd_num, sev_digit) = parse_grd_code(grd_id)
+    
+    # Prepare data
+    data = {
+        "complication": str(extract_complication_from_text(grd_name)),
+        "Prevision (Desc)": str(episode.prevision_desc),
+        "Estancia Norma GRD ": int(grd_expected_days),
+        "IR GRD (Código)": str(grd_id),
+        "Edad en años": float(age_years),
+        "Tipo Ingreso (Descripción)": parse_type(episode.tipo_ingreso_desc),
+        "Servicio Ingreso (Descripción)": str(episode.servicio_ingreso_desc),
+        'CDM_derived': str(cdm),
+        'GRD_num_derived': str(grd_num),
+        'sev_digit': str(sev_digit),
+        'tipo_from_code': str(tipo_digit),
+    }
+    
+    df = pd.DataFrame([data])
+    
+    # Prepare categorical and numeric columns
+    cat_cols = [
+        "IR GRD",
+        "Prevision (Desc)",
+        "IR GRD (Código)",
+        "Tipo Ingreso (Descripción)",
+        "Servicio Ingreso (Descripción)",
+        "complication",
+        "CDM_derived",
+        "GRD_num_derived",
+        "sev_digit",
+        "tipo_from_code",
+    ]
+    num_cols = [
+        "Estancia Norma GRD ",
+        "Edad en años",
+    ]
+    
+    for c in cat_cols:
+        if c in df.columns:
+            df[c] = df[c].apply(lambda v: "" if v is None else str(v))
+    for c in num_cols:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+    
+    try:
+        cat_feature_indices = [df.columns.get_loc(c) for c in cat_cols if c in df.columns]
+        pool = Pool(df, cat_features=cat_feature_indices)
+        probs = model.predict_proba(pool)
+    except Exception:
+        try:
+            probs = model.predict_proba(df)
+        except Exception:
+            return None
+    
+    # Extract probability
+    try:
+        pr = probs[0]
+        if isinstance(pr, (list, tuple)):
+            p1 = float(pr[1] if len(pr) >= 2 else pr[0])
+        elif isinstance(pr, np.ndarray):
+            if pr.ndim == 0:
+                p1 = float(pr)
+            elif pr.ndim == 1:
+                p1 = float(pr[1] if pr.shape[0] >= 2 else pr[0])
+            else:
+                flat = pr.flatten()
+                p1 = float(flat[1] if flat.size >= 2 else flat[0])
+        else:
+            p1 = float(pr)
+        
+        # Save to database
+        stmt_upd = (
+            update(ClinicalEpisodeModel)
+            .where(ClinicalEpisodeModel.id == episode.id)
+            .values(overstay_probability=p1)
+        )
+        await session.execute(stmt_upd)
+        await session.commit()
+        
+        return p1
+    except Exception:
+        return None
 
 
 def build_search_filter(search: str):
@@ -113,6 +274,8 @@ async def list_clinical_episodes(
     page: int = 1,
     page_size: int = 50,
     include: str | None = None,
+    overstay_probability_min: float | None = None,
+    sort_by_overstay_probability: bool = False,
     session: AsyncSession = Depends(get_session)
 ) -> PaginatedClinicalEpisodes:
     """
@@ -155,6 +318,10 @@ async def list_clinical_episodes(
         if search_filter is not None:
             query = query.where(search_filter)
     
+    # Apply overstay_probability filter if provided
+    if overstay_probability_min is not None:
+        query = query.where(ClinicalEpisodeModel.overstay_probability >= overstay_probability_min)
+    
     # Get total count before adding ORDER BY (ordering doesn't affect count)
     # Use distinct to avoid duplicate counts from joins
     count_query = select(func.count(func.distinct(ClinicalEpisodeModel.id)))
@@ -165,10 +332,44 @@ async def list_clinical_episodes(
         search_filter = build_search_filter(search)
         if search_filter is not None:
             count_query = count_query.where(search_filter)
+    
+    # Apply overstay_probability filter to count query if provided
+    if overstay_probability_min is not None:
+        count_query = count_query.where(ClinicalEpisodeModel.overstay_probability >= overstay_probability_min)
     total = await session.scalar(count_query) or 0
     
-    # Add relevance sorting
-    if search and search.strip():
+    # If sorting by overstay_probability, calculate missing probabilities first
+    if sort_by_overstay_probability:
+        # Get episodes that need probability calculation (without pagination, but limited to reasonable amount)
+        query_for_calc = select(ClinicalEpisodeModel).where(
+            ClinicalEpisodeModel.status == EpisodeStatus.ACTIVE,
+            ClinicalEpisodeModel.overstay_probability.is_(None)
+        )
+        query_for_calc = query_for_calc.join(Patient)
+        query_for_calc = query_for_calc.options(selectinload(ClinicalEpisodeModel.patient))
+        # Limit to first 50 to avoid performance issues
+        query_for_calc = query_for_calc.limit(50)
+        
+        result_for_calc = await session.execute(query_for_calc)
+        episodes_to_calc = result_for_calc.scalars().unique().all()
+        
+        # Calculate probabilities for episodes that don't have it
+        for episode in episodes_to_calc:
+            if episode.patient:
+                await calculate_probability_for_episode(episode, episode.patient, session)
+        
+        # Now apply sorting and pagination to the original query
+        query = query.order_by(
+            ClinicalEpisodeModel.overstay_probability.desc().nulls_last(),
+            ClinicalEpisodeModel.admission_at.desc()
+        )
+        offset = (page - 1) * page_size
+        query = query.offset(offset).limit(page_size)
+        if include_patient:
+            query = query.options(selectinload(ClinicalEpisodeModel.patient))
+        result = await session.execute(query)
+        episodes = result.scalars().unique().all()
+    elif search and search.strip():
         search_term = search.strip()
         # Sort by relevance:
         # 1. Exact first name matches (case-insensitive)
@@ -185,21 +386,27 @@ async def list_clinical_episodes(
             # Most recent admissions
             ClinicalEpisodeModel.admission_at.desc()
         )
+        # Apply pagination
+        offset = (page - 1) * page_size
+        query = query.offset(offset).limit(page_size)
+        # Add selectinload for patient if requested
+        if include_patient:
+            query = query.options(selectinload(ClinicalEpisodeModel.patient))
+        # Execute query
+        result = await session.execute(query)
+        episodes = result.scalars().unique().all()
     else:
         # Default sort when no search: most recent first
         query = query.order_by(ClinicalEpisodeModel.admission_at.desc())
-    
-    # Apply pagination
-    offset = (page - 1) * page_size
-    query = query.offset(offset).limit(page_size)
-    
-    # Add selectinload for patient if requested
-    if include_patient:
-        query = query.options(selectinload(ClinicalEpisodeModel.patient))
-    
-    # Execute query
-    result = await session.execute(query)
-    episodes = result.scalars().unique().all()
+        # Apply pagination
+        offset = (page - 1) * page_size
+        query = query.offset(offset).limit(page_size)
+        # Add selectinload for patient if requested
+        if include_patient:
+            query = query.options(selectinload(ClinicalEpisodeModel.patient))
+        # Execute query
+        result = await session.execute(query)
+        episodes = result.scalars().unique().all()
     
     # If social_score is requested, fetch the most recent score for each episode
     if include_social_score and episodes:
@@ -247,6 +454,11 @@ async def list_clinical_episodes(
                 "episode_identifier": episode.episode_identifier,
                 "grd_expected_days": episode.grd_expected_days,
                 "grd_name": episode.grd_name,
+                "grd_id": episode.grd_id,
+                "overstay_probability": episode.overstay_probability,
+                "prevision_desc": episode.prevision_desc,
+                "tipo_ingreso_desc": episode.tipo_ingreso_desc,
+                "servicio_ingreso_desc": episode.servicio_ingreso_desc,
                 "created_at": episode.created_at,
                 "updated_at": episode.updated_at,
                 "patient": episode.patient if include_patient else None,
@@ -274,6 +486,129 @@ async def list_clinical_episodes(
         page=page,
         page_size=page_size,
         total_pages=total_pages
+    )
+
+
+@router.get("/dashboard/stats", response_model=DashboardStatsResponse)
+async def get_dashboard_stats(
+    session: AsyncSession = Depends(get_session)
+) -> DashboardStatsResponse:
+    """
+    Get dashboard statistics based on overstay_probability and other metrics.
+    
+    Calculates:
+    - Total patients (open cases only)
+    - High risk: overstay_probability >= 0.75
+    - Medium risk: overstay_probability >= 0.5 AND < 0.75
+    - Low risk: rest of cases
+    - Social risk levels based on latest social scores
+    - Average stay days
+    - Deviations (cases with stay days > expected days)
+    """
+    from datetime import date
+    from app.models.social_score_history import SocialScoreHistory
+    
+    # Get all open episodes (ACTIVE status)
+    open_episodes_query = select(ClinicalEpisodeModel).where(
+        ClinicalEpisodeModel.status == EpisodeStatus.ACTIVE
+    )
+    open_episodes_result = await session.execute(open_episodes_query)
+    open_episodes = open_episodes_result.scalars().all()
+    
+    total_patients = len(open_episodes)
+    
+    # Calculate risk levels based on overstay_probability
+    high_risk = 0
+    medium_risk = 0
+    low_risk = 0
+    
+    for episode in open_episodes:
+        if episode.overstay_probability is not None:
+            if episode.overstay_probability >= 0.75:
+                high_risk += 1
+            elif episode.overstay_probability >= 0.5:
+                medium_risk += 1
+            else:
+                low_risk += 1
+        else:
+            # Episodes without probability are considered low risk
+            low_risk += 1
+    
+    # Calculate average stay days
+    total_days = 0
+    for episode in open_episodes:
+        if episode.admission_at:
+            days_in_stay = (datetime.utcnow() - episode.admission_at).days
+            total_days += days_in_stay
+    average_stay_days = round(total_days / total_patients) if total_patients > 0 else 0
+    
+    # Calculate deviations (cases with stay days > expected days, only for cases with GRD)
+    deviations = 0
+    for episode in open_episodes:
+        if episode.grd_expected_days is not None and episode.admission_at:
+            days_in_stay = (datetime.utcnow() - episode.admission_at).days
+            if days_in_stay > episode.grd_expected_days:
+                deviations += 1
+    
+    # Calculate social risk levels
+    # Get episode IDs
+    episode_ids = [ep.id for ep in open_episodes]
+    
+    if episode_ids:
+        # Get latest social score for each episode
+        latest_score_subquery = (
+            select(
+                SocialScoreHistory.episode_id,
+                func.max(SocialScoreHistory.recorded_at).label("max_recorded_at")
+            )
+            .where(SocialScoreHistory.episode_id.in_(episode_ids))
+            .group_by(SocialScoreHistory.episode_id)
+            .subquery()
+        )
+        
+        scores_query = (
+            select(SocialScoreHistory)
+            .join(
+                latest_score_subquery,
+                and_(
+                    SocialScoreHistory.episode_id == latest_score_subquery.c.episode_id,
+                    SocialScoreHistory.recorded_at == latest_score_subquery.c.max_recorded_at
+                )
+            )
+        )
+        scores_result = await session.execute(scores_query)
+        scores = scores_result.scalars().all()
+        
+        # Create a map of episode_id to latest score
+        score_map = {score.episode_id: score for score in scores}
+    else:
+        score_map = {}
+    
+    # Calculate social risk levels
+    high_social_risk = 0  # score >= 11
+    medium_social_risk = 0  # score 6-10
+    low_social_risk = 0  # score 0-5
+    
+    for episode in open_episodes:
+        score_record = score_map.get(episode.id)
+        if score_record and score_record.score is not None:
+            if score_record.score >= 11:
+                high_social_risk += 1
+            elif score_record.score >= 6:
+                medium_social_risk += 1
+            elif score_record.score >= 0:
+                low_social_risk += 1
+    
+    return DashboardStatsResponse(
+        totalPatients=total_patients,
+        highRisk=high_risk,
+        mediumRisk=medium_risk,
+        lowRisk=low_risk,
+        highSocialRisk=high_social_risk,
+        mediumSocialRisk=medium_social_risk,
+        lowSocialRisk=low_social_risk,
+        averageStayDays=average_stay_days,
+        deviations=deviations
     )
 
 
