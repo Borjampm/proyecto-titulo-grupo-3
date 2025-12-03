@@ -34,7 +34,8 @@ import {
   uploadDocument,
   deleteDocument,
   downloadDocument,
-  closeEpisode
+  closeEpisode,
+  resolveAlert
 } from '../lib/api-fastapi';
 import { toast } from 'sonner';
 
@@ -104,6 +105,18 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
       toast.error('Error al cerrar el episodio');
     } finally {
       setIsClosingEpisode(false);
+    }
+  };
+
+  const handleResolveAlert = async (alertId: string) => {
+    try {
+      await resolveAlert(alertId);
+      const alerts = await getPatientAlerts(patient.id);
+      setPatientAlerts(alerts);
+      toast.success('Alerta resuelta correctamente');
+    } catch (error) {
+      console.error('Error resolving alert:', error);
+      toast.error('Error al resolver la alerta');
     }
   };
 
@@ -362,7 +375,19 @@ export function PatientDetail({ patient, onBack }: PatientDetailProps) {
                     {new Date(alert.createdAt).toLocaleString('es-ES')}
                   </p>
                 </div>
-                <RiskBadge level={alert.severity} showIcon={false} />
+                <div className="flex items-center gap-2">
+                  <RiskBadge level={alert.severity} showIcon={false} />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleResolveAlert(alert.id);
+                    }}
+                  >
+                    Resolver
+                  </Button>
+                </div>
               </div>
             ))}
           </div>

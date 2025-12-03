@@ -2,7 +2,7 @@ from datetime import datetime
 from uuid import UUID
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from app.models.alert import AlertType, AlertSeverity
 
@@ -37,6 +37,18 @@ class Alert(AlertBase):
     created_by: Optional[str]
     created_at: datetime
     updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AlertWithPatient(AlertBase):
+    """Schema for alert response with patient information"""
+    id: UUID
+    episode_id: UUID
+    created_by: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    patient_name: Optional[str] = Field(None, description="Patient name for display")
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -28,6 +28,7 @@ import {
   AuthResponse,
   PaginatedResponse,
   PatientFilters,
+  RiskLevel,
   ExcelImportResult,
   Worker,
   WorkerSimple,
@@ -727,7 +728,8 @@ export async function getAllAlerts(): Promise<Alert[]> {
     return mockAlerts;
   }
   
-  const endpoint = '/alerts?active_only=true';
+  // Request all alerts with a high page_size to ensure we get everything
+  const endpoint = '/alerts?active_only=true&page_size=1000';
   const response = await apiClient.get<any[]>(endpoint);
   
   // Transform backend alerts to frontend format
@@ -739,7 +741,8 @@ export async function getAllAlerts(): Promise<Alert[]> {
     message: alert.message,
     createdAt: alert.created_at,
     isActive: alert.is_active,
-    createdBy: alert.created_by
+    createdBy: alert.created_by,
+    patientName: alert.patient_name || 'Paciente desconocido'
   }));
 }
 
@@ -761,6 +764,26 @@ export async function createAlert(
     severity: alert.severity,
     created_by: alert.createdBy
   });
+  
+  return {
+    id: response.id,
+    patientId: response.episode_id,
+    type: response.alert_type as 'stay-deviation' | 'social-risk',
+    severity: response.severity as RiskLevel,
+    message: response.message,
+    createdAt: response.created_at,
+    isActive: response.is_active,
+    createdBy: response.created_by
+  };
+}
+
+/**
+ * PATCH /alerts/{alert_id}/resolve
+ * Marca una alerta como resuelta (is_active = false)
+ */
+export async function resolveAlert(alertId: string): Promise<Alert> {
+  const endpoint = `/alerts/${alertId}/resolve`;
+  const response = await apiClient.patch<any>(endpoint, {});
   
   return {
     id: response.id,

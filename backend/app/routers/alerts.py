@@ -8,7 +8,8 @@ from uuid import UUID
 from app.deps import get_session
 from app.models.alert import Alert as AlertModel, AlertType, AlertSeverity
 from app.models.clinical_episode import ClinicalEpisode
-from app.schemas.alert import Alert, AlertCreateManual
+from app.models.patient import Patient
+from app.schemas.alert import Alert, AlertCreateManual, AlertWithPatient
 
 router = APIRouter(tags=["alerts"])
 
@@ -91,14 +92,14 @@ async def create_episode_alert(
     return new_alert
 
 
-@router.get("/alerts", response_model=List[Alert])
+@router.get("/alerts", response_model=List[AlertWithPatient])
 async def get_all_alerts(
     active_only: bool = Query(True, description="Filter to only active alerts"),
     alert_type: Optional[AlertType] = Query(None, description="Filter by alert type"),
     page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(50, ge=1, le=100, description="Number of alerts per page"),
+    page_size: int = Query(1000, ge=1, le=10000, description="Number of alerts per page"),
     session: AsyncSession = Depends(get_session)
-) -> List[Alert]:
+) -> List[AlertWithPatient]:
     """
     Get all alerts across all clinical episodes (paginated).
     
@@ -106,13 +107,15 @@ async def get_all_alerts(
         active_only: If True, only return active alerts (default: True)
         alert_type: Optional filter by alert type
         page: Page number (1-indexed)
-        page_size: Number of alerts per page (max 100)
+        page_size: Number of alerts per page (max 10000)
     
     Returns:
-        List of alerts with episode information
+        List of alerts with patient information
     """
-    # Build query with episode join for information
-    query = select(AlertModel).options(selectinload(AlertModel.clinical_episode))
+    # Build query with episode and patient join for information
+    query = select(AlertModel).options(
+        selectinload(AlertModel.clinical_episode).selectinload(ClinicalEpisode.patient)
+    )
     
     # Filter by active status if requested
     if active_only:
@@ -133,5 +136,58 @@ async def get_all_alerts(
     result = await session.execute(query)
     alerts = result.scalars().all()
     
-    return alerts
+    # Transform to include patient name
+    alerts_with_patient = []
+    for alert in alerts:
+        patient_name = None
+        if alert.clinical_episode and alert.clinical_episode.patient:
+            patient = alert.clinical_episode.patient
+            patient_name = f"{patient.first_name or ''} {patient.last_name or ''}".strip() or "Sin nombre"
+        
+        alert_dict = {
+            "id": alert.id,
+            "episode_id": alert.episode_id,
+            "alert_type": alert.alert_type,
+            "severity": alert.severity,
+            "message": alert.message,
+            "is_active": alert.is_active,
+            "created_by": alert.created_by,
+            "created_at": alert.created_at,
+            "updated_at": alert.updated_at,
+            "patient_name": patient_name
+        }
+        alerts_with_patient.append(AlertWithPatient(**alert_dict))
+    
+    return alerts_with_patient
+
+
+@router.patch("/alerts/{alert_id}/resolve", response_model=Alert)
+async def resolve_alert(
+    alert_id: UUID,
+    session: AsyncSession = Depends(get_session)
+) -> Alert:
+    """
+    Mark an alert as resolved by setting is_active to False.
+    
+    Args:
+        alert_id: UUID of the alert to resolve
+    
+    Returns:
+        The updated alert with is_active=False
+    """
+    # Fetch alert
+    result = await session.execute(
+        select(AlertModel).where(AlertModel.id == alert_id)
+    )
+    alert = result.scalar_one_or_none()
+    
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    
+    # Update is_active to False
+    alert.is_active = False
+    await session.commit()
+    await session.refresh(alert)
+    
+    return alert
 

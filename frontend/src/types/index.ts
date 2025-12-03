@@ -41,6 +41,7 @@ export interface Alert {
   createdAt: string;
   isActive?: boolean;
   createdBy?: string;
+  patientName?: string; // Patient name for display
 }
 
 export interface ReferralForm {

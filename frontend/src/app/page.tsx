@@ -32,6 +32,7 @@ function AppContent() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [dashboardKey, setDashboardKey] = useState(0);
   const [patientListFilters, setPatientListFilters] = useState<{
     sortBy?: string;
     socialScoreRange?: [number, number];
@@ -62,6 +63,10 @@ function AppContent() {
 
   const handleBackToList = () => {
     setSelectedPatient(null);
+    // Refresh dashboard when returning from patient detail
+    if (currentView === 'dashboard') {
+      setDashboardKey(prev => prev + 1);
+    }
   };
 
   const handleNavigateToPatients = (filters: { sortBy?: string; socialScoreRange?: [number, number]; caseStatus?: string; riskLevel?: string }) => {
@@ -76,7 +81,7 @@ function AppContent() {
 
     switch (currentView) {
       case 'dashboard':
-        return <Dashboard onNavigateToPatients={handleNavigateToPatients} onSelectPatient={handleSelectPatient} />;
+        return <Dashboard key={dashboardKey} onNavigateToPatients={handleNavigateToPatients} onSelectPatient={handleSelectPatient} />;
       case 'patients':
         return (
           <PatientList 
