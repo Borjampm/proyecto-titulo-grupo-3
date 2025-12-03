@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Card } from './ui/card';
 import { Badge } from './ui/badge';
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 import { Users, AlertTriangle, TrendingUp, Clock, Activity, ClipboardList, Circle, Calendar } from 'lucide-react';
 import { RiskBadge } from './RiskBadge';
 import { getDashboardStats, getClinicalEpisodes, getAllTasks } from '../lib/api-fastapi';
@@ -27,12 +28,20 @@ export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardPr
       setLoading(true);
       const [statsData, urgentPatientsData, tasksData] = await Promise.all([
         getDashboardStats(),
-        getClinicalEpisodes({ riskLevel: 'high', pageSize: 5 }),
+        getClinicalEpisodes({ 
+          caseStatus: 'open',
+          sortByOverstayProbability: true,
+          pageSize: 5 
+        }),
         getAllTasks({ openOnly: true, orderByDueDate: true }),
       ]);
       
       setStats(statsData);
-      setUrgentPatients(urgentPatientsData.data);
+      // Filter to only open cases and limit to 5
+      const openUrgentPatients = urgentPatientsData.data
+        .filter(p => p.caseStatus === 'open')
+        .slice(0, 5);
+      setUrgentPatients(openUrgentPatients);
       // Filter pending tasks and limit to 5 for display
       const pending = tasksData.filter(t => t.status === 'pending');
       setPendingTasks(pending.slice(0, 5));
@@ -63,118 +72,201 @@ export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardPr
 
       {/* Statistics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <Card 
-          className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-          onClick={() => onNavigateToPatients?.({ caseStatus: 'open' })}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-muted-foreground">Casos Abiertos</p>
-              <p className="mt-1">{stats.totalPatients}</p>
-            </div>
-            <Users className="w-8 h-8 text-blue-600" />
-          </div>
-        </Card>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Card 
+              className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+              onClick={() => onNavigateToPatients?.({ caseStatus: 'open' })}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-muted-foreground">Casos Abiertos</p>
+                  <p className="mt-1">{stats.totalPatients}</p>
+                </div>
+                <Users className="w-8 h-8 text-blue-600" />
+              </div>
+            </Card>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="leading-relaxed">
+              Cantidad de casos que están abiertos según los coordinadores de estadía.
+              <br />
+              Se puede cambiar su estado en la sección de Gestión de Casos.
+            </p>
+          </TooltipContent>
+        </Tooltip>
 
-        <Card 
-          className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-          onClick={() => onNavigateToPatients?.({ caseStatus: 'open', riskLevel: 'high' })}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-muted-foreground">Alto Riesgo</p>
-              <p className="mt-1 text-red-600">{stats.highRisk}</p>
-            </div>
-            <AlertTriangle className="w-8 h-8 text-red-600" />
-          </div>
-        </Card>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Card 
+              className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+              onClick={() => onNavigateToPatients?.({ caseStatus: 'open', riskLevel: 'high' })}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-muted-foreground leading-tight">Alto riesgo de prolongar su estadía</p>
+                  <p className="mt-1 text-red-600">{stats.highRisk}</p>
+                </div>
+                <AlertTriangle className="w-8 h-8 text-red-600" />
+              </div>
+            </Card>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="leading-relaxed">
+              Cantidad de casos en los que el modelo predictivo dió que hay un 75% de probabilidad o más
+              <br />
+              de que alarguen su estadía.
+            </p>
+          </TooltipContent>
+        </Tooltip>
 
-        <Card 
-          className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-          onClick={() => onNavigateToPatients?.({ caseStatus: 'open', riskLevel: 'medium' })}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-muted-foreground">Riesgo Medio</p>
-              <p className="mt-1 text-yellow-600">{stats.mediumRisk}</p>
-            </div>
-            <Activity className="w-8 h-8 text-yellow-600" />
-          </div>
-        </Card>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Card 
+              className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+              onClick={() => onNavigateToPatients?.({ caseStatus: 'open', riskLevel: 'medium' })}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-muted-foreground leading-tight">Riesgo medio de prolongar su estadía</p>
+                  <p className="mt-1 text-yellow-600">{stats.mediumRisk}</p>
+                </div>
+                <Activity className="w-8 h-8 text-yellow-600" />
+              </div>
+            </Card>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="leading-relaxed">
+              Cantidad de casos en los que el modelo predictivo dió que hay un 50% de probabilidad o más
+              <br />
+              de que alarguen su estadía.
+            </p>
+          </TooltipContent>
+        </Tooltip>
 
-        <Card 
-          className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-          onClick={() => onNavigateToPatients?.({ caseStatus: 'open', sortBy: 'deviation' })}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-muted-foreground">Desviaciones</p>
-              <p className="mt-1">{stats.deviations}</p>
-            </div>
-            <TrendingUp className="w-8 h-8 text-orange-600" />
-          </div>
-        </Card>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Card 
+              className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+              onClick={() => onNavigateToPatients?.({ caseStatus: 'open', sortBy: 'deviation' })}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-muted-foreground">Desviaciones</p>
+                  <p className="mt-1">{stats.deviations}</p>
+                </div>
+                <TrendingUp className="w-8 h-8 text-orange-600" />
+              </div>
+            </Card>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="leading-relaxed">
+              Cantidad de casos en los que ya se desvío la estadía por sobre lo previsto.
+            </p>
+          </TooltipContent>
+        </Tooltip>
 
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-muted-foreground">Promedio Días</p>
-              <p className="mt-1">{stats.averageStayDays.toFixed(1)}</p>
-            </div>
-            <Clock className="w-8 h-8 text-purple-600" />
-          </div>
-        </Card>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Card className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-muted-foreground">Promedio Días</p>
+                  <p className="mt-1">{stats.averageStayDays.toFixed(1)}</p>
+                </div>
+                <Clock className="w-8 h-8 text-purple-600" />
+              </div>
+            </Card>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p className="leading-relaxed">
+              Cantidad promedio de días de estadía.
+            </p>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       {/* Social Risk Statistics */}
       <div>
         <h3 className="text-lg font-medium mb-4">Indicadores de Riesgo Social</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card 
-            className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [11, 20], caseStatus: 'open' })}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-muted-foreground">Riesgo Social Alto</p>
-                <p className="mt-1 text-red-600">{stats.highSocialRisk}</p>
-              </div>
-              <Users className="w-8 h-8 text-red-600" />
-            </div>
-          </Card>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card 
+                className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [11, 20], caseStatus: 'open' })}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-muted-foreground">Riesgo Social Alto</p>
+                    <p className="mt-1 text-red-600">{stats.highSocialRisk}</p>
+                  </div>
+                  <Users className="w-8 h-8 text-red-600" />
+                </div>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="leading-relaxed">
+                Cantidad de casos en los que el Score Social arrojó que son de alto riesgo.
+              </p>
+            </TooltipContent>
+          </Tooltip>
 
-          <Card 
-            className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [6, 10], caseStatus: 'open' })}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-muted-foreground">Riesgo Social Medio</p>
-                <p className="mt-1 text-yellow-600">{stats.mediumSocialRisk}</p>
-              </div>
-              <Users className="w-8 h-8 text-yellow-600" />
-            </div>
-          </Card>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card 
+                className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [6, 10], caseStatus: 'open' })}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-muted-foreground">Riesgo Social Medio</p>
+                    <p className="mt-1 text-yellow-600">{stats.mediumSocialRisk}</p>
+                  </div>
+                  <Users className="w-8 h-8 text-yellow-600" />
+                </div>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="leading-relaxed">
+                Cantidad de casos en los que el Score Social arrojó que son de riesgo medio.
+              </p>
+            </TooltipContent>
+          </Tooltip>
 
-          <Card 
-            className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [0, 5], caseStatus: 'open' })}
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-muted-foreground">Riesgo Social Bajo</p>
-                <p className="mt-1 text-green-600">{stats.lowSocialRisk}</p>
-              </div>
-              <Users className="w-8 h-8 text-green-600" />
-            </div>
-          </Card>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Card 
+                className="p-4 cursor-pointer hover:bg-muted/50 transition-colors"
+                onClick={() => onNavigateToPatients?.({ sortBy: 'social-score', socialScoreRange: [0, 5], caseStatus: 'open' })}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-muted-foreground">Riesgo Social Bajo</p>
+                    <p className="mt-1 text-green-600">{stats.lowSocialRisk}</p>
+                  </div>
+                  <Users className="w-8 h-8 text-green-600" />
+                </div>
+              </Card>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="leading-relaxed">
+                Cantidad de casos en los que el Score Social arrojó que son de riesgo bajo.
+              </p>
+            </TooltipContent>
+          </Tooltip>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Urgent Patients */}
         <Card className="p-6">
-          <h3 className="mb-4">Pacientes Urgentes</h3>
+          <div className="mb-4">
+            <h3 className="mb-2">Pacientes Urgentes</h3>
+            <p className="text-sm text-muted-foreground">
+              Los 5 pacientes con mayor probabilidad de prolongar su estadía según el modelo predictivo
+            </p>
+          </div>
           <div className="space-y-3">
             {urgentPatients.length === 0 ? (
               <p className="text-muted-foreground">No hay pacientes de alto riesgo</p>
@@ -191,6 +283,13 @@ export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardPr
                   </div>
                   <div className="text-right">
                     <RiskBadge level={patient.riskLevel} />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {patient.overstayProbability !== null && patient.overstayProbability !== undefined ? (
+                        <>Probabilidad: {(patient.overstayProbability * 100).toFixed(1)}%</>
+                      ) : (
+                        <>Probabilidad: No calculada</>
+                      )}
+                    </p>
                     <p className="text-muted-foreground mt-1">
                       {patient.daysInStay} días
                       {patient.expectedDays !== null && (
@@ -206,12 +305,17 @@ export function Dashboard({ onNavigateToPatients, onSelectPatient }: DashboardPr
 
         {/* Pending Tasks */}
         <Card className="p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2">
-              <ClipboardList className="w-5 h-5 text-primary" />
-              <h3>Tareas Pendientes</h3>
+          <div className="mb-4">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="w-5 h-5 text-primary" />
+                <h3>Tareas Pendientes</h3>
+              </div>
+              <Badge variant="secondary">{totalOpenTasks} abiertas</Badge>
             </div>
-            <Badge variant="secondary">{totalOpenTasks} abiertas</Badge>
+            <p className="text-sm text-muted-foreground">
+              Las 5 tareas con fecha límite más cercana a hoy
+            </p>
           </div>
           <div className="space-y-3">
             {pendingTasks.length === 0 ? (

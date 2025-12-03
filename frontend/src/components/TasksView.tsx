@@ -25,8 +25,6 @@ import {
   Plus,
   UserPlus,
   Users,
-  Calendar,
-  AlertTriangle,
   Filter,
   X,
   Eye,
@@ -41,6 +39,8 @@ import {
   deleteWorker,
 } from '../lib/api-fastapi';
 import { toast } from 'sonner';
+import { TaskCard } from './TaskCard';
+import { CreateTaskModal } from './CreateTaskModal';
 
 export function TasksView() {
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -49,6 +49,9 @@ export function TasksView() {
   const [loading, setLoading] = useState(true);
   const [filterAssignee, setFilterAssignee] = useState<string>('all');
   const [showCompleted, setShowCompleted] = useState(false);
+  
+  // Create task modal
+  const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
   
   // Worker creation dialog
   const [isWorkerDialogOpen, setIsWorkerDialogOpen] = useState(false);
@@ -174,21 +177,6 @@ export function TasksView() {
     }
   };
 
-  const getDueDateStatus = (dueDate?: string) => {
-    if (!dueDate) return null;
-    
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const due = new Date(dueDate);
-    due.setHours(0, 0, 0, 0);
-    
-    const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    
-    if (diffDays < 0) return 'overdue';
-    if (diffDays === 0) return 'today';
-    if (diffDays <= 2) return 'soon';
-    return 'ok';
-  };
 
   const pendingTasks = tasks.filter(t => t.status === 'pending');
   const inProgressTasks = tasks.filter(t => t.status === 'in-progress');
@@ -212,21 +200,22 @@ export function TasksView() {
             Gestión de tareas abiertas y en progreso
           </p>
         </div>
-        <Dialog open={isWorkerDialogOpen} onOpenChange={setIsWorkerDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <UserPlus className="w-4 h-4 mr-2" />
-              Nuevo Trabajador
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Crear Nuevo Trabajador</DialogTitle>
-              <DialogDescription>
-                Agrega un nuevo trabajador al sistema para asignar tareas.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
+        <div className="flex gap-2">
+          <Dialog open={isWorkerDialogOpen} onOpenChange={setIsWorkerDialogOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <UserPlus className="w-4 h-4 mr-2" />
+                Nuevo Trabajador
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Crear Nuevo Trabajador</DialogTitle>
+                <DialogDescription>
+                  Agrega un nuevo trabajador al sistema para asignar tareas.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label htmlFor="worker-name">Nombre *</Label>
                 <Input
@@ -266,17 +255,18 @@ export function TasksView() {
                   />
                 </div>
               </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsWorkerDialogOpen(false)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleCreateWorker} disabled={creatingWorker}>
-                {creatingWorker ? 'Creando...' : 'Crear Trabajador'}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setIsWorkerDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button onClick={handleCreateWorker} disabled={creatingWorker}>
+                  {creatingWorker ? 'Creando...' : 'Crear Trabajador'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {/* Stats Cards */}
@@ -382,140 +372,32 @@ export function TasksView() {
 
           {/* Tasks List */}
           <Card className="p-6">
-            <h3 className="mb-4 font-semibold">
-              {showCompleted ? `Todas las Tareas (${tasks.length})` : `Tareas Abiertas (${tasks.length})`}
-            </h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">
+                {showCompleted ? `Todas las Tareas (${tasks.length})` : `Tareas Abiertas (${tasks.length})`}
+              </h3>
+              <Button onClick={() => setIsCreateTaskModalOpen(true)}>
+                <ClipboardList className="w-4 h-4 mr-2" />
+                Nueva Tarea
+              </Button>
+            </div>
             <div className="space-y-3">
               {tasks.length === 0 ? (
                 <p className="text-muted-foreground py-8 text-center">
                   {showCompleted ? 'No hay tareas' : 'No hay tareas abiertas'}
                 </p>
               ) : (
-                tasks.map((task) => {
-                  const dueDateStatus = getDueDateStatus(task.dueDate);
-                  const isCompleted = task.status === 'completed';
-                  return (
-                    <div
+                tasks.map((task) => (
+                  <TaskCard
                       key={task.id}
-                      className={`border rounded-lg p-4 transition-colors ${
-                        isCompleted 
-                          ? 'bg-green-50/50 border-green-200' 
-                          : 'hover:bg-muted/50'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-2 flex-wrap">
-                            {isCompleted ? (
-                              <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
-                            ) : task.status === 'in-progress' ? (
-                              <Clock className="w-4 h-4 text-yellow-600 shrink-0" />
-                            ) : (
-                              <Circle className="w-4 h-4 text-gray-400 shrink-0" />
-                            )}
-                            <h4 className={`font-medium truncate ${isCompleted ? 'text-muted-foreground line-through' : ''}`}>
-                              {task.title}
-                            </h4>
-                          </div>
-                          {task.description && (
-                            <p className="text-muted-foreground text-sm mb-2 line-clamp-2">
-                              {task.description}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Badge
-                              variant="outline"
-                              className={
-                                isCompleted
-                                  ? 'bg-green-50 text-green-700 border-green-200'
-                                  : task.priority === 'high'
-                                  ? 'bg-red-50 text-red-700 border-red-200'
-                                  : task.priority === 'medium'
-                                  ? 'bg-yellow-50 text-yellow-700 border-yellow-200'
-                                  : 'bg-blue-50 text-blue-700 border-blue-200'
-                              }
-                            >
-                              {isCompleted
-                                ? 'Completada'
-                                : task.priority === 'high'
-                                ? 'Alta'
-                                : task.priority === 'medium'
-                                ? 'Media'
-                                : 'Baja'}
-                            </Badge>
-                            {task.dueDate && (
-                              <Badge
-                                variant="outline"
-                                className={
-                                  isCompleted
-                                    ? 'bg-gray-100 text-gray-600 border-gray-200'
-                                    : dueDateStatus === 'overdue'
-                                    ? 'bg-red-100 text-red-800 border-red-300'
-                                    : dueDateStatus === 'today'
-                                    ? 'bg-orange-100 text-orange-800 border-orange-300'
-                                    : dueDateStatus === 'soon'
-                                    ? 'bg-yellow-100 text-yellow-800 border-yellow-300'
-                                    : 'bg-gray-100 text-gray-700 border-gray-300'
-                                }
-                              >
-                                <Calendar className="w-3 h-3 mr-1" />
-                                {!isCompleted && dueDateStatus === 'overdue' && (
-                                  <AlertTriangle className="w-3 h-3 mr-1" />
-                                )}
-                                {new Date(task.dueDate).toLocaleDateString('es-ES')}
-                              </Badge>
-                            )}
-                            {isCompleted && task.completedAt && (
-                              <span className="text-xs text-muted-foreground">
-                                Completada el {new Date(task.completedAt).toLocaleDateString('es-ES')}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <div className="flex flex-col items-end gap-2 shrink-0">
-                          <Select
-                            value={task.status}
-                            onValueChange={(value) => handleStatusChange(task.id, value)}
-                          >
-                            <SelectTrigger className={`w-[130px] ${isCompleted ? 'bg-green-50' : ''}`}>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="pending">Pendiente</SelectItem>
-                              <SelectItem value="in-progress">En Progreso</SelectItem>
-                              <SelectItem value="completed">Completada</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          {!isCompleted && (
-                            <Select
-                              value={task.assignedToId || 'unassigned'}
-                              onValueChange={(value) =>
-                                handleAssigneeChange(task.id, value === 'unassigned' ? '' : value)
-                              }
-                            >
-                              <SelectTrigger className="w-[130px]">
-                                <SelectValue placeholder="Asignar a..." />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="unassigned">Sin asignar</SelectItem>
-                                {workers.map((worker) => (
-                                  <SelectItem key={worker.id} value={worker.id}>
-                                    {worker.name}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-                          {isCompleted && task.assignedTo && task.assignedTo !== 'Sin asignar' && (
-                            <span className="text-xs text-muted-foreground">
-                              Por: {task.assignedTo}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })
+                    task={task}
+                    workers={workers}
+                    onTaskUpdated={loadTasks}
+                    onStatusChange={handleStatusChange}
+                    onAssigneeChange={handleAssigneeChange}
+                    showCompletedInfo={true}
+                  />
+                ))
               )}
             </div>
           </Card>
@@ -583,6 +465,13 @@ export function TasksView() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      {/* Create Task Modal */}
+      <CreateTaskModal
+        open={isCreateTaskModalOpen}
+        onOpenChange={setIsCreateTaskModalOpen}
+        onTaskCreated={loadTasks}
+      />
     </div>
   );
 }
