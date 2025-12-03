@@ -143,14 +143,6 @@ export const mockAlerts: Alert[] = [
     severity: 'high',
     message: 'Alta complejidad social: familia no puede asumir cuidados',
     createdAt: '2025-10-23T11:25:00'
-  },
-  {
-    id: 'a5',
-    patientId: '3',
-    type: 'financial-risk',
-    severity: 'medium',
-    message: 'Cobertura financiera insuficiente detectada',
-    createdAt: '2025-10-21T09:05:00'
   }
 ];
 

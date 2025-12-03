@@ -35,10 +35,12 @@ export interface Patient {
 export interface Alert {
   id: string;
   patientId: string;
-  type: 'stay-deviation' | 'social-risk' | 'financial-risk';
+  type: 'stay-deviation' | 'social-risk';
   severity: RiskLevel;
   message: string;
   createdAt: string;
+  isActive?: boolean;
+  createdBy?: string;
 }
 
 export interface ReferralForm {

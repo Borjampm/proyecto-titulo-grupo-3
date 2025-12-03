@@ -29,6 +29,9 @@ from app.models.clinical_episode_information import (
     EpisodeInfoType,
 )
 from app.models.social_score_history import SocialScoreHistory
+from app.models.alert import Alert, AlertType, AlertSeverity
+
+ALERT_SCORE_THRESHOLD = 4
 
 # Configure logging
 logging.basicConfig(
@@ -1774,7 +1777,7 @@ class ExcelUploader:
             return None
 
     async def _create_social_score(self, episode_id: UUID, score_data: Dict[str, Any]) -> SocialScoreHistory:
-        """Create a social score history record."""
+        """Create a social score history record and generate alert if score is high."""
         social_score = SocialScoreHistory(
             episode_id=episode_id,
             score=score_data.get("score"),
@@ -1785,6 +1788,22 @@ class ExcelUploader:
         self.db.add(social_score)
         await self.db.flush()
         logger.info(f"Created social score for episode {episode_id}: score={score_data.get('score')}, reason={score_data.get('no_score_reason')}")
+        
+        # Automatically create alert if score >= 11 (high risk)
+        score = score_data.get("score")
+        if score is not None and score >= ALERT_SCORE_THRESHOLD:
+            alert = Alert(
+                episode_id=episode_id,
+                alert_type=AlertType.SOCIAL_RISK,
+                severity=AlertSeverity.MEDIUM,
+                message=f"Score social alto detectado: {score}",
+                is_active=True,
+                created_by="Sistema (automatico desde score social)"
+            )
+            self.db.add(alert)
+            await self.db.flush()
+            logger.info(f"Created automatic social-risk alert for episode {episode_id} with score {score}")
+        
         return social_score
 
     # ==================== GRD DATA UPLOAD ====================
@@ -1976,8 +1995,20 @@ class ExcelUploader:
             await self.db.rollback()
             raise
 
+    def _calculate_days_in_stay(self, admission_at: datetime) -> int:
+        """Calculate current days in stay from admission date."""
+        if not admission_at:
+            return 0
+        
+        now = datetime.now(admission_at.tzinfo) if admission_at.tzinfo else datetime.now()
+        delta = now - admission_at
+        return max(0, delta.days)
+    
     async def _update_episode_grd(self, episode_id: UUID, grd_days: int, grd_name: str = None) -> None:
-        """Update the grd_expected_days and grd_name fields on a ClinicalEpisode."""
+        """
+        Update the grd_expected_days and grd_name fields on a ClinicalEpisode.
+        Automatically creates stay-deviation alerts if the patient is staying longer than expected.
+        """
         stmt = select(ClinicalEpisode).where(ClinicalEpisode.id == episode_id)
         result = await self.db.execute(stmt)
         episode = result.scalar_one_or_none()
@@ -1988,6 +2019,29 @@ class ExcelUploader:
                 episode.grd_name = grd_name
             await self.db.flush()
             logger.debug(f"Updated episode {episode_id} with grd_expected_days={grd_days}, grd_name={grd_name}")
+            
+            # Calculate deviation and create alert if necessary
+            days_in_stay = self._calculate_days_in_stay(episode.admission_at)
+            deviation = days_in_stay - grd_days
+            
+            # Only create alert if staying longer than expected (deviation > 2 days)
+            if deviation > 2:
+                if deviation > 5:
+                    severity = AlertSeverity.HIGH
+                else:
+                    severity = AlertSeverity.MEDIUM
+                
+                alert = Alert(
+                    episode_id=episode_id,
+                    alert_type=AlertType.STAY_DEVIATION,
+                    severity=severity,
+                    message=f"Estadía supera en {deviation} días lo esperado según GRD",
+                    is_active=True,
+                    created_by="Sistema (automatico desde GRD)"
+                )
+                self.db.add(alert)
+                await self.db.flush()
+                logger.info(f"Created automatic stay-deviation alert for episode {episode_id}: deviation={deviation} days, severity={severity.value}")
 
     # ==================== GRD NORMS DATA UPLOAD ====================
 
