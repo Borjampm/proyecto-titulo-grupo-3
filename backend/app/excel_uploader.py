@@ -1583,6 +1583,7 @@ class ExcelUploader:
 
             scores_created = 0
             missing_ids = []
+            episodes_updated = 0
 
             # Build a map of episode_identifier -> episode_id for quick lookup
             episode_map = await self._build_episode_identifier_map()
@@ -1591,25 +1592,66 @@ class ExcelUploader:
             for idx, row in df.iterrows():
                 try:
                     score_data = self._parse_social_score_row(row)
-                    if score_data:
-                        episode_identifier = score_data.pop("episode_identifier", None)
-                        if episode_identifier and episode_identifier in episode_map:
-                            episode_id = episode_map[episode_identifier]
+                    # Extract episode_identifier early to use for both score and episode field updates
+                    episode_identifier = score_data.pop("episode_identifier", None) if score_data else None
+
+                    # Map columns from Social Score Excel to ClinicalEpisode fields
+                    prevision_desc = row.get("Desc. Convenio")
+                    tipo_ingreso_desc = row.get("Vía de Ingreso")
+                    servicio_ingreso_desc = row.get("Servicio")
+
+                    # Normalize values: keep None for NaN/empty strings
+                    def norm_str(v):
+                        if v is None or pd.isna(v):
+                            return None
+                        s = str(v).strip()
+                        return s if s and s.lower() != 'nan' else None
+
+                    prevision_desc = norm_str(prevision_desc)
+                    tipo_ingreso_desc = norm_str(tipo_ingreso_desc)
+                    servicio_ingreso_desc = norm_str(servicio_ingreso_desc)
+
+                    # Update episode fields if episode exists
+                    if episode_identifier and episode_identifier in episode_map:
+                        episode_id = episode_map[episode_identifier]
+
+                        # Load episode and update fields
+                        stmt_ep = select(ClinicalEpisode).where(ClinicalEpisode.id == episode_id)
+                        res_ep = await self.db.execute(stmt_ep)
+                        episode = res_ep.scalar_one_or_none()
+                        if episode:
+                            changed = False
+                            if prevision_desc is not None:
+                                episode.prevision_desc = prevision_desc
+                                changed = True
+                            if tipo_ingreso_desc is not None:
+                                episode.tipo_ingreso_desc = tipo_ingreso_desc
+                                changed = True
+                            if servicio_ingreso_desc is not None:
+                                episode.servicio_ingreso_desc = servicio_ingreso_desc
+                                changed = True
+                            if changed:
+                                await self.db.flush()
+                                episodes_updated += 1
+
+                        # Also create social score record if present
+                        if score_data:
                             await self._create_social_score(episode_id, score_data)
                             scores_created += 1
-                        else:
-                            logger.warning(f"Episode not found for identifier: {episode_identifier}")
-                            if episode_identifier:
-                                missing_ids.append(episode_identifier)
+                    else:
+                        logger.warning(f"Episode not found for identifier: {episode_identifier}")
+                        if episode_identifier:
+                            missing_ids.append(episode_identifier)
                 except Exception as e:
                     logger.error(f"Error processing social score row {idx}: {e}")
                     continue
 
             await self.db.commit()
-            logger.info(f"Successfully uploaded {scores_created} social scores. Missing episodes: {len(missing_ids)}")
+            logger.info(f"Successfully uploaded {scores_created} social scores. Updated {episodes_updated} episodes with coverage/service fields. Missing episodes: {len(missing_ids)}")
             
             return {
                 "count": scores_created,
+                "episodes_updated": episodes_updated,
                 "missing_count": len(missing_ids),
                 "missing_ids": missing_ids
             }
@@ -1950,7 +1992,7 @@ class ExcelUploader:
                     # Find and update episode - try exact match first
                     if episode_identifier in episode_map:
                         episode_id = episode_map[episode_identifier]
-                        await self._update_episode_grd(episode_id, grd_expected_days, grd_name)
+                        await self._update_episode_grd(episode_id, grd_expected_days, grd_name, grd_id)
                         updated_count += 1
                         logger.debug(f"Updated episode {episode_identifier} with GRD {grd_id} ({grd_expected_days} days) - {grd_name}")
                     else:
@@ -1959,7 +2001,7 @@ class ExcelUploader:
                         for db_identifier, ep_id in episode_map.items():
                             # Try matching just the numeric part
                             if episode_identifier in db_identifier or db_identifier in episode_identifier:
-                                await self._update_episode_grd(ep_id, grd_expected_days, grd_name)
+                                await self._update_episode_grd(ep_id, grd_expected_days, grd_name, grd_id)
                                 updated_count += 1
                                 logger.debug(f"Updated episode {db_identifier} (matched from {episode_identifier}) with GRD {grd_id} ({grd_expected_days} days) - {grd_name}")
                                 found = True
@@ -2017,6 +2059,8 @@ class ExcelUploader:
             episode.grd_expected_days = grd_days
             if grd_name:
                 episode.grd_name = grd_name
+            if grd_id:
+                episode.grd_id = grd_id
             await self.db.flush()
             logger.debug(f"Updated episode {episode_id} with grd_expected_days={grd_days}, grd_name={grd_name}")
             
