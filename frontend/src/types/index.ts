@@ -24,6 +24,7 @@ export interface Patient {
   financialRisk: boolean;
   socialScore?: number | null; // Puntaje social (can be null)
   socialScoreReason?: string | null; // Reason if social score is null (Motivo)
+  overstayProbability?: number | null; // Predicted probability of overstay (0-1)
   status: PatientStatus;
   caseStatus: CaseStatus;
   grg: string;
@@ -183,6 +184,8 @@ export interface PatientFilters {
   riskLevel?: RiskLevel;
   page?: number;
   pageSize?: number;
+  overstayProbabilityMin?: number;
+  sortByOverstayProbability?: boolean;
 }
 
 export interface UploadedFile {
